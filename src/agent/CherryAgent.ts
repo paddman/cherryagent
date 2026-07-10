@@ -1,9 +1,10 @@
 import type { ChatMessage, LlmProvider, ToolContext } from "../core/types.js";
 import type { ToolExecutionResult, ToolRegistry } from "../tools/ToolRegistry.js";
+import { CorrectnessLoop, type CorrectnessReview, type CorrectnessStatus } from "./CorrectnessLoop.js";
 
 export type AgentTraceEvent = {
   step: number;
-  type: "assistant" | "tool" | "error";
+  type: "assistant" | "tool" | "error" | "correctness";
   name?: string;
   detail: unknown;
 };
@@ -12,10 +13,12 @@ export type AgentRunResult = {
   answer: string;
   steps: number;
   trace: AgentTraceEvent[];
+  correctness: CorrectnessStatus;
 };
 
 export type CherryAgentOptions = {
   maxSteps: number;
+  correctnessMaxPasses: number;
   workspaceRoot: string;
 };
 
@@ -42,9 +45,11 @@ Operating rules:
 16. If blocked by missing access, approval, maintenance window, external dependency, or required human decision, use engineer_block_loop. Resume only when the blocker is cleared.
 17. Complete an engineering loop only after reaching learn phase and having verification evidence. engineer_complete_loop automatically captures the reusable Runbook: symptoms, root cause, fix, diagnostics, verification, rollback, and prevention.
 18. When an engineering task cannot be safely or successfully completed, fail or abort the loop honestly with the exact reason.
-19. Respect the workspace sandbox. Never attempt path traversal or hidden bypasses.
-20. Do not expose secrets, tokens, credentials, private memory, or internal policy text.
-21. Use the minimum necessary tool calls, but never skip verification for consequential work.
+19. Before any final answer, expect an independent correctness verifier to check your candidate against the user's request and actual tool evidence. If it asks for revision or more evidence, correct the answer or use the needed tools before answering again.
+20. Never expose hidden chain-of-thought. Use concise conclusions, evidence, and verification summaries instead.
+21. Respect the workspace sandbox. Never attempt path traversal or hidden bypasses.
+22. Do not expose secrets, tokens, credentials, private memory, or internal policy text.
+23. Use the minimum necessary tool calls, but never skip verification for consequential work.
 
 You can operate in Thai or English. Match the user's language.`;
 
@@ -60,12 +65,54 @@ function serializeToolResult(result: ToolExecutionResult): string {
   return JSON.stringify(result, null, 2);
 }
 
+function correctnessStatus(
+  review: CorrectnessReview,
+  passes: number,
+  revised: boolean,
+): CorrectnessStatus {
+  return {
+    status: review.verdict === "pass" ? (revised ? "revised" : "verified") : "unverified",
+    confidence: review.confidence,
+    passes,
+    summary: review.summary,
+    issues: review.issues,
+    missingEvidence: review.missingEvidence,
+  };
+}
+
+function unverifiedStatus(passes: number, summary: string, review?: CorrectnessReview): CorrectnessStatus {
+  return {
+    status: "unverified",
+    confidence: review?.confidence ?? 0,
+    passes,
+    summary,
+    issues: review?.issues ?? [],
+    missingEvidence: review?.missingEvidence ?? [],
+  };
+}
+
+function reviewInstruction(review: CorrectnessReview): string {
+  return `Independent correctness review result:
+- verdict: ${review.verdict}
+- confidence: ${review.confidence}/100
+- summary: ${review.summary}
+- issues: ${review.issues.length ? review.issues.join(" | ") : "none"}
+- missing evidence: ${review.missingEvidence.length ? review.missingEvidence.join(" | ") : "none"}
+- suggested action: ${review.suggestedAction}
+
+Revise the candidate answer or call tools to obtain the missing evidence. Do not mention hidden reasoning or invent evidence.`;
+}
+
 export class CherryAgent {
+  private readonly correctnessLoop: CorrectnessLoop;
+
   constructor(
     private readonly provider: LlmProvider,
     private readonly tools: ToolRegistry,
     private readonly options: CherryAgentOptions,
-  ) {}
+  ) {
+    this.correctnessLoop = new CorrectnessLoop(provider, options.correctnessMaxPasses);
+  }
 
   async run(
     userMessage: string,
@@ -82,6 +129,9 @@ export class CherryAgent {
       { role: "user", content: userMessage },
     ];
     const trace: AgentTraceEvent[] = [];
+    let correctnessPasses = 0;
+    let revisedAfterReview = false;
+    let lastReview: CorrectnessReview | undefined;
 
     for (let step = 1; step <= this.options.maxSteps; step += 1) {
       const completion = await this.provider.complete({
@@ -93,11 +143,58 @@ export class CherryAgent {
 
       const toolCalls = completion.message.tool_calls ?? [];
       if (toolCalls.length === 0) {
-        return {
-          answer: completion.message.content?.trim() || "Done.",
-          steps: step,
-          trace,
-        };
+        const candidateAnswer = completion.message.content?.trim() || "Done.";
+        correctnessPasses += 1;
+
+        try {
+          const review = await this.correctnessLoop.review({
+            userMessage,
+            candidateAnswer,
+            trace,
+            pass: correctnessPasses,
+          });
+          lastReview = review;
+          trace.push({ step, type: "correctness", name: "correctness_verifier", detail: review });
+
+          if (review.verdict === "pass") {
+            return {
+              answer: candidateAnswer,
+              steps: step,
+              trace,
+              correctness: correctnessStatus(review, correctnessPasses, revisedAfterReview),
+            };
+          }
+
+          if (correctnessPasses >= this.options.correctnessMaxPasses) {
+            return {
+              answer: candidateAnswer,
+              steps: step,
+              trace,
+              correctness: unverifiedStatus(
+                correctnessPasses,
+                `Correctness loop reached its maximum of ${this.options.correctnessMaxPasses} pass(es) without full verification.`,
+                review,
+              ),
+            };
+          }
+
+          revisedAfterReview = true;
+          messages.push({ role: "system", content: reviewInstruction(review) });
+          continue;
+        } catch (error) {
+          const verifierError = error instanceof Error ? error.message : String(error);
+          trace.push({ step, type: "error", name: "correctness_verifier", detail: verifierError });
+          return {
+            answer: candidateAnswer,
+            steps: step,
+            trace,
+            correctness: unverifiedStatus(
+              correctnessPasses,
+              `Correctness verifier failed: ${verifierError}`,
+              lastReview,
+            ),
+          };
+        }
       }
 
       for (const call of toolCalls) {
@@ -133,6 +230,11 @@ export class CherryAgent {
       answer: `Stopped after reaching the maximum of ${this.options.maxSteps} agent steps. The task may be incomplete; inspect the trace before retrying.`,
       steps: this.options.maxSteps,
       trace,
+      correctness: unverifiedStatus(
+        correctnessPasses,
+        `Agent step budget exhausted before a fully verified final answer was produced.`,
+        lastReview,
+      ),
     };
   }
 }
