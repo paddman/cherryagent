@@ -91,6 +91,7 @@ export async function createRuntime(): Promise<{
   const provider = new OpenAICompatibleProvider(config.llm);
   const agent = new CherryAgent(provider, tools, {
     maxSteps: config.agent.maxSteps,
+    correctnessMaxPasses: config.agent.correctnessMaxPasses,
     workspaceRoot: config.workspaceRoot,
   });
 
