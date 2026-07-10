@@ -118,6 +118,27 @@
     .composer { display: grid; grid-template-columns: 1fr auto; gap: 8px; border: 1px solid #3f3f46; background: #18181b; border-radius: 14px; padding: 7px 7px 7px 12px; }
     .composer textarea { border: 0; background: transparent; min-height: 42px; padding: 9px 3px; }
     .send { width: 42px; height: 42px; border: 0; border-radius: 11px; background: linear-gradient(135deg,#7c3aed,#db2777); font-weight: 900; }
+    .engineer-stats { grid-template-columns: repeat(5,minmax(0,1fr)); }
+    .engineer-layout { display: grid; grid-template-columns: minmax(320px,.72fr) minmax(500px,1.28fr); gap: 14px; }
+    .engineer-loop-list, .runbook-list { display: grid; gap: 10px; }
+    .engineer-loop-card, .runbook-card { border: 1px solid var(--line); background: #0d0d0f; border-radius: 14px; padding: 13px; }
+    .engineer-loop-card.blocked { border-color: #92400e; }
+    .engineer-loop-card.failed { border-color: #7f1d1d; }
+    .engineer-loop-card.succeeded { border-color: #166534; }
+    .engineer-loop-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+    .engineer-phase-track { display: grid; grid-template-columns: repeat(8,minmax(54px,1fr)); gap: 4px; margin-top: 11px; overflow-x: auto; }
+    .engineer-phase { border: 1px solid #303036; background: #151517; border-radius: 8px; padding: 6px 4px; text-align: center; font-size: 8px; text-transform: uppercase; color: #71717a; }
+    .engineer-phase.done { border-color: #3b0764; background: #21153a; color: #d8b4fe; }
+    .engineer-phase.active { border-color: #7c3aed; background: #3b0764; color: #fff; box-shadow: 0 0 16px rgba(124,58,237,.22); }
+    .engineer-evidence { margin-top: 9px; padding: 9px; border-radius: 9px; background: #111113; color: #d4d4d8; font-size: 10px; line-height: 1.5; }
+    .engineer-status { font-size: 9px; text-transform: uppercase; letter-spacing: .06em; padding: 4px 7px; border-radius: 999px; background: #27272a; }
+    .engineer-status.running { background: #1e3a8a; color: #bfdbfe; }
+    .engineer-status.blocked { background: #78350f; color: #fde68a; }
+    .engineer-status.succeeded { background: #14532d; color: #bbf7d0; }
+    .engineer-status.failed, .engineer-status.aborted { background: #7f1d1d; color: #fecaca; }
+    .runbook-card details { margin-top: 8px; }
+    .runbook-card summary { cursor: pointer; color: #c4b5fd; font-size: 11px; }
+    .runbook-body { color: #d4d4d8; font-size: 10px; line-height: 1.55; margin-top: 8px; white-space: pre-wrap; }
     .drawer { position: fixed; inset: 0 0 0 auto; width: min(520px,100%); z-index: 40; background: rgba(9,9,11,.99); border-left: 1px solid var(--line); box-shadow: -20px 0 60px rgba(0,0,0,.5); display: none; flex-direction: column; }
     .drawer.open { display: flex; }
     .drawer-head { height: 68px; padding: 0 18px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
@@ -134,13 +155,13 @@
     .approve { background: #166534; } .deny { background: #3f3f46; }
     .toast-stack { position: fixed; right: 18px; bottom: 18px; z-index: 60; display: grid; gap: 8px; width: min(360px,calc(100% - 36px)); }
     .toast { border: 1px solid #4c1d95; background: #1f1235; border-radius: 12px; padding: 11px 13px; box-shadow: 0 18px 50px rgba(0,0,0,.4); font-size: 12px; }
-    @media (max-width: 1180px) { .stats { grid-template-columns: repeat(3,1fr); } .grid-2,.reminder-layout { grid-template-columns: 1fr; } }
+    @media (max-width: 1180px) { .stats { grid-template-columns: repeat(3,1fr); } .grid-2,.reminder-layout,.engineer-layout { grid-template-columns: 1fr; } }
     @media (max-width: 760px) {
       .shell { grid-template-columns: 1fr; }
       .sidebar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; height: 66px; padding: 7px; border: 0; border-top: 1px solid var(--line); flex-direction: row; }
       .brand,.runtime { display: none; }
-      .nav { width: 100%; grid-template-columns: repeat(4,1fr); gap: 4px; }
-      .nav-button { font-size: 10px; justify-content: center; text-align: center; padding: 8px 4px; }
+      .nav { width: 100%; grid-template-columns: repeat(5,1fr); gap: 4px; }
+      .nav-button { font-size: 9px; justify-content: center; text-align: center; padding: 8px 2px; }
       .nav-count { display: none; }
       .main { padding-bottom: 66px; }
       .topbar { padding: 0 12px; }
@@ -148,7 +169,7 @@
       .view { padding: 15px 12px; }
       .hero { align-items: flex-start; flex-direction: column; }
       .date-chip { display: none; }
-      .stats { grid-template-columns: repeat(2,1fr); }
+      .stats,.engineer-stats { grid-template-columns: repeat(2,1fr); }
       .quick-add { grid-template-columns: 1fr; }
       .board { grid-template-columns: repeat(5,82vw); }
       .form-grid,.schedule-fields { grid-template-columns: 1fr; }
@@ -166,6 +187,7 @@
       <button class="nav-button active" data-view="dashboard"><span>Dashboard</span></button>
       <button class="nav-button" data-view="flow"><span>Flow board</span><span class="nav-count" id="flowCount">0</span></button>
       <button class="nav-button" data-view="reminders"><span>Reminders</span><span class="nav-count" id="alertNavCount">0</span></button>
+      <button class="nav-button" data-view="engineer"><span>Engineer</span><span class="nav-count" id="engineerNavCount">0</span></button>
       <button class="nav-button" data-view="chat"><span>Ask Cherry</span></button>
     </nav>
     <div class="runtime">
@@ -173,6 +195,7 @@
       <div id="statusText" style="margin-top:7px">Checking...</div>
       <div id="connectorStatus" style="margin-top:4px">Google Workspace: checking...</div>
       <div id="schedulerStatus" style="margin-top:4px">Scheduler: checking...</div>
+      <div id="engineerStatus" style="margin-top:4px">Engineer Loop: checking...</div>
       <button class="install" id="installButton">Install CherryAgent</button>
     </div>
   </aside>
@@ -254,10 +277,37 @@
       </div>
     </section>
 
+    <section class="view" id="view-engineer">
+      <div class="section-head"><div><h1>Engineer Loop Engine</h1><p>Plan → Execute → Observe → Diagnose → Patch → Test → Verify → Learn. Bounded retries, evidence and automatic runbook capture.</p></div><button class="secondary" id="refreshEngineerButton">Refresh</button></div>
+      <div class="stats engineer-stats">
+        <div class="stat"><div class="stat-label">Running</div><div class="stat-value" id="engineerStatRunning">0</div></div>
+        <div class="stat"><div class="stat-label">Blocked</div><div class="stat-value" id="engineerStatBlocked">0</div></div>
+        <div class="stat"><div class="stat-label">Succeeded</div><div class="stat-value" id="engineerStatSucceeded">0</div></div>
+        <div class="stat overdue"><div class="stat-label">Failed</div><div class="stat-value" id="engineerStatFailed">0</div></div>
+        <div class="stat"><div class="stat-label">Runbooks</div><div class="stat-value" id="engineerStatRunbooks">0</div></div>
+      </div>
+      <div class="engineer-layout">
+        <div style="display:grid;gap:14px;align-content:start">
+          <div class="card">
+            <div class="card-head"><div><h3>Start engineering loop</h3><div class="card-sub">Create a bounded technical loop manually, or ask Cherry and let tool calling create it.</div></div></div>
+            <form class="form-grid" id="engineerLoopForm">
+              <div class="field full"><label>Objective</label><textarea id="engineerObjective" required placeholder="Fix HTTP 524 on Cherry trading journal and verify response time"></textarea></div>
+              <div class="field full"><label>Success criteria · one per line</label><textarea id="engineerCriteria" required placeholder="HTTP 200 from health endpoint&#10;P95 response under 2 seconds&#10;No new 524 errors during verification"></textarea></div>
+              <div class="field"><label>Max iterations</label><input id="engineerMaxIterations" type="number" min="1" max="25" value="5" /></div>
+              <div class="field"><label>Initial hypothesis</label><input id="engineerHypothesis" placeholder="Long synchronous request exceeds proxy timeout" /></div>
+              <div class="field full"><button class="primary" type="submit">Start Engineer Loop</button></div>
+            </form>
+          </div>
+          <div class="card"><div class="card-head"><div><h3>Learned runbooks</h3><div class="card-sub">Generated only after verified success</div></div></div><div class="runbook-list" id="engineerRunbookList"></div></div>
+        </div>
+        <div class="card"><div class="card-head"><div><h3>Loops & evidence</h3><div class="card-sub">Current phase, iteration budget, verification evidence and latest trace</div></div></div><div class="engineer-loop-list" id="engineerLoopList"></div></div>
+      </div>
+    </section>
+
     <section class="view" id="view-chat">
       <div class="chat-shell">
-        <div class="chat" id="chat"><div class="message assistant">I'm CherryAgent. Ask me to plan work, build a flow, set reminders, inspect today's schedule, read Gmail, manage Calendar and Drive, or execute multi-step office work with tools.</div></div>
-        <div class="composer-wrap"><form class="composer" id="composer"><textarea id="message" rows="1" placeholder="Ask Cherry to plan or do office work..." autocomplete="off"></textarea><button class="send" id="sendButton" aria-label="Send">↑</button></form></div>
+        <div class="chat" id="chat"><div class="message assistant">I'm CherryAgent. Ask me to plan work, build a flow, set reminders, inspect today's schedule, read Gmail, manage Calendar and Drive, or solve technical incidents through the Engineer Loop with evidence and runbook learning.</div></div>
+        <div class="composer-wrap"><form class="composer" id="composer"><textarea id="message" rows="1" placeholder="Ask Cherry to plan, engineer, or do office work..." autocomplete="off"></textarea><button class="send" id="sendButton" aria-label="Send">↑</button></form></div>
       </div>
     </section>
 
