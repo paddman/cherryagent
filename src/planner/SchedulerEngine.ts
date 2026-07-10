@@ -13,7 +13,7 @@ export type SchedulerEngineOptions = {
 };
 
 export class SchedulerEngine {
-  #timer?: NodeJS.Timeout;
+  #timer: NodeJS.Timeout | undefined;
   #running = false;
   #lastTick?: SchedulerTickResult;
   readonly #intervalMs: number;
