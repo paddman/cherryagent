@@ -99,7 +99,7 @@ function normalizeTags(values?: string[]): string[] {
 }
 
 function normalizeChannels(values?: NotificationChannel[]): NotificationChannel[] {
-  const selected = [...new Set(values ?? ["in_app", "browser"])];
+  const selected = [...new Set<NotificationChannel>(values ?? ["in_app", "browser"])];
   if (selected.some((value) => !channels.includes(value))) throw new Error("Unknown notification channel");
   return selected.length ? selected : ["in_app"];
 }
@@ -163,16 +163,16 @@ export class PlannerStore {
 
   async createItem(input: {
     title: string;
-    description?: string;
-    status?: PlanStatus;
-    priority?: PlanPriority;
-    flowId?: string;
-    tags?: string[];
-    startAt?: string;
-    dueAt?: string;
-    durationMinutes?: number;
-    timezone?: string;
-    dependsOn?: string[];
+    description?: string | undefined;
+    status?: PlanStatus | undefined;
+    priority?: PlanPriority | undefined;
+    flowId?: string | undefined;
+    tags?: string[] | undefined;
+    startAt?: string | undefined;
+    dueAt?: string | undefined;
+    durationMinutes?: number | undefined;
+    timezone?: string | undefined;
+    dependsOn?: string[] | undefined;
   }): Promise<PlanItem> {
     return this.#mutate((data) => {
       const title = input.title.trim();
@@ -297,12 +297,12 @@ export class PlannerStore {
   }
 
   async createReminder(input: {
-    itemId?: string;
+    itemId?: string | undefined;
     title: string;
-    message?: string;
+    message?: string | undefined;
     schedule: ScheduleSpec;
-    channels?: NotificationChannel[];
-    enabled?: boolean;
+    channels?: NotificationChannel[] | undefined;
+    enabled?: boolean | undefined;
   }): Promise<PlannerReminder> {
     return this.#mutate((data) => {
       const title = input.title.trim();
