@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+.cherry/
+workspace/
+.DS_Store
+*.log
