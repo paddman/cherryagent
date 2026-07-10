@@ -3,16 +3,19 @@ import { readFile, stat } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { createRuntime } from "./bootstrap.js";
 import { config } from "./config.js";
+import type { EngineerLoopStatus, EngineerPhase } from "./engineer/EngineerLoopEngine.js";
 import type { PlanPriority, PlanStatus } from "./planner/PlannerStore.js";
 import type { NotificationChannel, ScheduleSpec } from "./planner/schedule.js";
 import type { PendingApproval } from "./safety/ApprovalGate.js";
 
 const publicRoot = resolve(process.cwd(), "public");
-const { agent, tools, approvalGate, connectors, planner, scheduler } = await createRuntime();
+const { agent, tools, approvalGate, connectors, planner, engineer, scheduler } = await createRuntime();
 
 const planStatuses: PlanStatus[] = ["inbox", "planned", "doing", "waiting", "done", "cancelled"];
 const priorities: PlanPriority[] = ["low", "normal", "high", "urgent"];
 const notificationChannels: NotificationChannel[] = ["in_app", "browser", "email", "line", "slack", "webhook"];
+const engineerStatuses: EngineerLoopStatus[] = ["running", "blocked", "succeeded", "failed", "aborted"];
+const engineerPhases: EngineerPhase[] = ["plan", "execute", "observe", "diagnose", "patch", "test", "verify", "learn"];
 
 const contentTypes: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -75,6 +78,23 @@ function parseStatus(value: unknown): PlanStatus | undefined {
 
 function parsePriority(value: unknown): PlanPriority | undefined {
   return typeof value === "string" && priorities.includes(value as PlanPriority) ? value as PlanPriority : undefined;
+}
+
+function parseEngineerStatus(value: unknown): EngineerLoopStatus | undefined {
+  return typeof value === "string" && engineerStatuses.includes(value as EngineerLoopStatus)
+    ? value as EngineerLoopStatus
+    : undefined;
+}
+
+function parseEngineerPhase(value: unknown): EngineerPhase {
+  if (typeof value !== "string" || !engineerPhases.includes(value as EngineerPhase)) {
+    throw new Error(`phase must be one of: ${engineerPhases.join(", ")}`);
+  }
+  return value as EngineerPhase;
+}
+
+function parseOptionalEngineerPhase(value: unknown): EngineerPhase | undefined {
+  return value === undefined ? undefined : parseEngineerPhase(value);
 }
 
 function parseChannels(value: unknown): NotificationChannel[] | undefined {
@@ -170,7 +190,10 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && pathname === "/health") {
-      const dashboard = await planner.getDashboard();
+      const [dashboard, engineerDashboard] = await Promise.all([
+        planner.getDashboard(),
+        engineer.getDashboard(),
+      ]);
       json(res, 200, {
         ok: true,
         name: "CherryAgent",
@@ -184,6 +207,7 @@ const server = createServer(async (req, res) => {
           activeReminders: dashboard.stats.activeReminders,
           unreadAlerts: dashboard.stats.unreadAlerts,
         },
+        engineer: engineerDashboard.stats,
         time: new Date().toISOString(),
       });
       return;
@@ -191,6 +215,110 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "GET" && pathname === "/tools") {
       json(res, 200, tools.list().map(({ name, description, risk, parameters }) => ({ name, description, risk, parameters })));
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/engineer/dashboard") {
+      json(res, 200, { ok: true, dashboard: await engineer.getDashboard() });
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/engineer/loops") {
+      const status = parseEngineerStatus(url.searchParams.get("status"));
+      json(res, 200, { ok: true, loops: await engineer.listLoops(status) });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/engineer/loops") {
+      const body = await readJson(req);
+      const loop = await engineer.startLoop({
+        objective: requiredString(body, "objective"),
+        successCriteria: stringArray(body.successCriteria) ?? [],
+        ...(typeof body.maxIterations === "number" ? { maxIterations: body.maxIterations } : {}),
+        ...(optionalString(body, "planItemId") ? { planItemId: optionalString(body, "planItemId") } : {}),
+        ...(optionalString(body, "hypothesis") ? { hypothesis: optionalString(body, "hypothesis") } : {}),
+      });
+      json(res, 201, { ok: true, loop });
+      return;
+    }
+
+    const engineerLoopMatch = pathname.match(/^\/engineer\/loops\/([^/]+)$/);
+    if (req.method === "GET" && engineerLoopMatch) {
+      json(res, 200, { ok: true, loop: await engineer.getLoop(decodeURIComponent(engineerLoopMatch[1] ?? "")) });
+      return;
+    }
+
+    const engineerPhaseMatch = pathname.match(/^\/engineer\/loops\/([^/]+)\/phase$/);
+    if (req.method === "POST" && engineerPhaseMatch) {
+      const body = await readJson(req);
+      const evidence = stringArray(body.evidence);
+      const nextPhase = parseOptionalEngineerPhase(body.nextPhase);
+      const loop = await engineer.recordPhase({
+        loopId: decodeURIComponent(engineerPhaseMatch[1] ?? ""),
+        phase: parseEngineerPhase(body.phase),
+        summary: requiredString(body, "summary"),
+        ...(evidence ? { evidence } : {}),
+        ...(optionalString(body, "tool") ? { tool: optionalString(body, "tool") } : {}),
+        ...(optionalString(body, "error") ? { error: optionalString(body, "error") } : {}),
+        ...(nextPhase ? { nextPhase } : {}),
+      });
+      json(res, 200, { ok: true, loop });
+      return;
+    }
+
+    const engineerIterationMatch = pathname.match(/^\/engineer\/loops\/([^/]+)\/next-iteration$/);
+    if (req.method === "POST" && engineerIterationMatch) {
+      const body = await readJson(req);
+      const loop = await engineer.nextIteration({
+        loopId: decodeURIComponent(engineerIterationMatch[1] ?? ""),
+        diagnosis: requiredString(body, "diagnosis"),
+        nextAction: requiredString(body, "nextAction"),
+      });
+      json(res, 200, { ok: true, loop });
+      return;
+    }
+
+    const engineerActionMatch = pathname.match(/^\/engineer\/loops\/([^/]+)\/(block|resume|fail|abort)$/);
+    if (req.method === "POST" && engineerActionMatch) {
+      const id = decodeURIComponent(engineerActionMatch[1] ?? "");
+      const action = engineerActionMatch[2];
+      const body = await readJson(req);
+      if (action === "block") {
+        json(res, 200, { ok: true, loop: await engineer.blockLoop(id, requiredString(body, "reason")) });
+        return;
+      }
+      if (action === "resume") {
+        json(res, 200, { ok: true, loop: await engineer.resumeLoop(id, optionalString(body, "note")) });
+        return;
+      }
+      if (action === "fail") {
+        json(res, 200, { ok: true, loop: await engineer.failLoop(id, requiredString(body, "reason")) });
+        return;
+      }
+      json(res, 200, { ok: true, loop: await engineer.abortLoop(id, requiredString(body, "reason")) });
+      return;
+    }
+
+    const engineerCompleteMatch = pathname.match(/^\/engineer\/loops\/([^/]+)\/complete$/);
+    if (req.method === "POST" && engineerCompleteMatch) {
+      const body = await readJson(req);
+      const prevention = stringArray(body.prevention);
+      const result = await engineer.completeLoop({
+        loopId: decodeURIComponent(engineerCompleteMatch[1] ?? ""),
+        outcome: requiredString(body, "outcome"),
+        rootCause: requiredString(body, "rootCause"),
+        fix: requiredString(body, "fix"),
+        ...(optionalString(body, "rollback") ? { rollback: optionalString(body, "rollback") } : {}),
+        ...(prevention ? { prevention } : {}),
+        ...(optionalString(body, "runbookTitle") ? { runbookTitle: optionalString(body, "runbookTitle") } : {}),
+      });
+      json(res, 200, { ok: true, ...result });
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/engineer/runbooks") {
+      const limit = Number(url.searchParams.get("limit") ?? "50");
+      json(res, 200, { ok: true, runbooks: await engineer.listRunbooks(Number.isFinite(limit) ? limit : 50) });
       return;
     }
 
@@ -370,4 +498,5 @@ server.listen(config.server.port, config.server.host, () => {
   console.log(`Loaded ${tools.list().length} tools for model ${config.llm.model}`);
   console.log(`Google Workspace configured: ${connectors.google ? "yes" : "no"}`);
   console.log(`Planner scheduler interval: ${config.scheduler.intervalMs} ms`);
+  console.log(`Engineer Loop Engine state: ${config.engineerFile}`);
 });
