@@ -14,5 +14,15 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - run: npm run typecheck
+      - name: Run typecheck with diagnostics
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee engineer-typecheck.log
+      - name: Upload typecheck diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engineer-typecheck-log
+          path: engineer-typecheck.log
       - run: npm run build
