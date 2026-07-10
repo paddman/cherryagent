@@ -30,6 +30,11 @@ function integerEnv(name: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function optionalEnv(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  return value || undefined;
+}
+
 const knownRisks = new Set<RiskLevel>(["safe", "write", "external", "dangerous"]);
 const autoApprove = new Set<RiskLevel>(
   (process.env.CHERRY_AUTO_APPROVE ?? "safe,write")
@@ -37,6 +42,11 @@ const autoApprove = new Set<RiskLevel>(
     .map((item) => item.trim())
     .filter((item): item is RiskLevel => knownRisks.has(item as RiskLevel)),
 );
+
+const googleAccessToken = optionalEnv("CHERRY_GOOGLE_ACCESS_TOKEN");
+const googleClientId = optionalEnv("CHERRY_GOOGLE_CLIENT_ID");
+const googleClientSecret = optionalEnv("CHERRY_GOOGLE_CLIENT_SECRET");
+const googleRefreshToken = optionalEnv("CHERRY_GOOGLE_REFRESH_TOKEN");
 
 export const config = {
   llm: {
@@ -47,6 +57,16 @@ export const config = {
   agent: {
     maxSteps: integerEnv("CHERRY_MAX_STEPS", 12),
     autoApprove,
+  },
+  google: {
+    accessToken: googleAccessToken,
+    clientId: googleClientId,
+    clientSecret: googleClientSecret,
+    refreshToken: googleRefreshToken,
+    tokenEndpoint: optionalEnv("CHERRY_GOOGLE_TOKEN_ENDPOINT") ?? "https://oauth2.googleapis.com/token",
+    configured: Boolean(
+      googleAccessToken || (googleClientId && googleClientSecret && googleRefreshToken),
+    ),
   },
   memoryFile: resolve(process.env.CHERRY_MEMORY_FILE ?? ".cherry/memory.json"),
   workspaceRoot: resolve(process.env.CHERRY_WORKSPACE ?? "workspace"),
