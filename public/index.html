@@ -14,6 +14,7 @@
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top left, #2e1065 0, #09090b 36%, #09090b 100%); }
     button, textarea { font: inherit; }
+    button { color: inherit; }
     .shell { min-height: 100vh; display: grid; grid-template-columns: 280px minmax(0, 1fr); }
     .sidebar { border-right: 1px solid #27272a; background: rgba(9,9,11,.84); backdrop-filter: blur(18px); padding: 24px; display: flex; flex-direction: column; gap: 24px; }
     .brand { display: flex; align-items: center; gap: 12px; }
@@ -27,10 +28,13 @@
     .features { display: grid; gap: 10px; color: #d4d4d8; font-size: 13px; }
     .feature { padding: 11px 12px; border-radius: 12px; background: #18181b; border: 1px solid #27272a; }
     .install { margin-top: auto; border: 1px solid #7c3aed; color: #fff; background: #5b21b6; padding: 11px 14px; border-radius: 12px; cursor: pointer; display: none; }
-    .main { min-width: 0; display: flex; flex-direction: column; height: 100vh; }
+    .main { min-width: 0; display: flex; flex-direction: column; height: 100vh; position: relative; }
     .topbar { height: 70px; border-bottom: 1px solid #27272a; display: flex; align-items: center; justify-content: space-between; padding: 0 26px; background: rgba(9,9,11,.66); backdrop-filter: blur(16px); }
     .topbar strong { font-size: 14px; }
+    .top-actions { display: flex; align-items: center; gap: 8px; }
     .badge { font-size: 12px; color: #d8b4fe; background: #3b0764; border: 1px solid #6b21a8; border-radius: 999px; padding: 6px 10px; }
+    .approval-button { border: 1px solid #3f3f46; background: #18181b; border-radius: 999px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
+    .approval-count { display: inline-grid; place-items: center; min-width: 20px; height: 20px; margin-left: 5px; border-radius: 999px; background: #be123c; font-weight: 800; }
     .chat { flex: 1; overflow-y: auto; padding: 34px max(20px, calc((100% - 920px)/2)); display: flex; flex-direction: column; gap: 18px; }
     .message { max-width: 82%; padding: 15px 17px; border-radius: 18px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
     .assistant { align-self: flex-start; background: #18181b; border: 1px solid #27272a; border-top-left-radius: 6px; }
@@ -42,14 +46,35 @@
     .send { width: 44px; height: 44px; border: 0; border-radius: 13px; background: linear-gradient(135deg,#7c3aed,#db2777); color: #fff; cursor: pointer; font-weight: 800; }
     .send:disabled { opacity: .45; cursor: wait; }
     .hint { text-align: center; margin-top: 9px; color: #71717a; font-size: 11px; }
+    .drawer { position: absolute; inset: 0 0 0 auto; width: min(520px, 100%); z-index: 20; background: rgba(9,9,11,.98); border-left: 1px solid #27272a; box-shadow: -20px 0 60px rgba(0,0,0,.45); display: none; flex-direction: column; }
+    .drawer.open { display: flex; }
+    .drawer-head { height: 70px; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #27272a; }
+    .drawer-head h2 { margin: 0; font-size: 16px; }
+    .drawer-close { border: 1px solid #3f3f46; background: #18181b; border-radius: 10px; width: 36px; height: 36px; cursor: pointer; }
+    .approval-list { flex: 1; overflow: auto; padding: 18px; display: grid; align-content: start; gap: 12px; }
+    .approval-empty { color: #71717a; border: 1px dashed #3f3f46; border-radius: 16px; padding: 28px; text-align: center; }
+    .approval-card { border: 1px solid #3f3f46; background: #111113; border-radius: 16px; padding: 15px; }
+    .approval-title { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+    .approval-title strong { font-size: 14px; overflow-wrap: anywhere; }
+    .risk { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; border-radius: 999px; padding: 4px 7px; background: #3f3f46; }
+    .risk.external { background: #78350f; color: #fde68a; }
+    .risk.dangerous { background: #7f1d1d; color: #fecaca; }
+    .approval-args { margin: 12px 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: #d4d4d8; background: #09090b; border-radius: 10px; padding: 10px; }
+    .approval-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .approval-actions button { border: 0; border-radius: 10px; padding: 10px; cursor: pointer; font-weight: 700; }
+    .approve { background: #166534; }
+    .deny { background: #3f3f46; }
+    .connector { margin-top: 8px; font-size: 11px; color: #a1a1aa; }
     @media (max-width: 780px) {
       .shell { grid-template-columns: 1fr; }
       .sidebar { display: none; }
       .main { height: 100dvh; }
       .topbar { padding: 0 16px; }
+      .badge { display: none; }
       .chat { padding: 22px 14px; }
       .message { max-width: 92%; }
       .composer-wrap { padding: 12px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+      .drawer { width: 100%; }
     }
   </style>
 </head>
@@ -63,30 +88,41 @@
       <div class="status">
         <div class="status-row"><span>Agent runtime</span><span class="dot" id="statusDot"></span></div>
         <div class="muted" id="statusText" style="margin-top:8px;font-size:12px">Checking...</div>
+        <div class="connector" id="connectorStatus">Google Workspace: checking...</div>
       </div>
       <div class="features">
         <div class="feature">Multi-step tool calling</div>
+        <div class="feature">Gmail, Calendar, Drive</div>
         <div class="feature">Memory, tasks, notes</div>
-        <div class="feature">Sandboxed file workspace</div>
-        <div class="feature">Risk-aware approvals</div>
+        <div class="feature">Approval-gated external actions</div>
       </div>
       <button class="install" id="installButton">Install CherryAgent</button>
     </aside>
     <main class="main">
       <header class="topbar">
         <strong>Office Autopilot</strong>
-        <span class="badge" id="toolCount">Tools loading...</span>
+        <div class="top-actions">
+          <button class="approval-button" id="approvalButton">Approvals <span class="approval-count" id="approvalCount">0</span></button>
+          <span class="badge" id="toolCount">Tools loading...</span>
+        </div>
       </header>
       <section class="chat" id="chat">
-        <div class="message assistant">I'm CherryAgent. Give me office work to do. I can use tools, keep tasks and notes, work with sandboxed files, and verify results before I claim success.</div>
+        <div class="message assistant">I'm CherryAgent. Give me office work to do. I can use tools, work with Gmail, Calendar and Drive, create drafts, manage tasks, and ask for approval before consequential external actions.</div>
       </section>
       <div class="composer-wrap">
         <form class="composer" id="composer">
           <textarea id="message" rows="1" placeholder="Ask Cherry to do office work..." autocomplete="off"></textarea>
           <button class="send" id="sendButton" aria-label="Send">↑</button>
         </form>
-        <div class="hint">CherryAgent uses tools. External and dangerous actions should require approval.</div>
+        <div class="hint">External and dangerous actions pause in the approval inbox before execution.</div>
       </div>
+      <aside class="drawer" id="approvalDrawer" aria-label="Approval inbox">
+        <div class="drawer-head">
+          <div><h2>Approval Inbox</h2><div class="muted" style="font-size:12px;margin-top:3px">Review actions before Cherry executes them</div></div>
+          <button class="drawer-close" id="approvalClose" aria-label="Close">×</button>
+        </div>
+        <div class="approval-list" id="approvalList"></div>
+      </aside>
     </main>
   </div>
   <script type="module" src="/app.js"></script>
