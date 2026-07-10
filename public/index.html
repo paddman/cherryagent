@@ -3,128 +3,271 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#7c3aed" />
+  <meta name="theme-color" content="#6d28d9" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>CherryAgent</title>
+  <title>CherryAgent Office Planner</title>
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
   <style>
-    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #09090b; color: #fafafa; }
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --bg: #09090b; --panel: #111113; --panel2: #18181b; --line: #27272a; --muted: #a1a1aa;
+      --purple: #7c3aed; --pink: #db2777; --green: #22c55e; --red: #ef4444; --amber: #f59e0b;
+      background: var(--bg); color: #fafafa;
+    }
     * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top left, #2e1065 0, #09090b 36%, #09090b 100%); }
-    button, textarea { font: inherit; }
-    button { color: inherit; }
-    .shell { min-height: 100vh; display: grid; grid-template-columns: 280px minmax(0, 1fr); }
-    .sidebar { border-right: 1px solid #27272a; background: rgba(9,9,11,.84); backdrop-filter: blur(18px); padding: 24px; display: flex; flex-direction: column; gap: 24px; }
-    .brand { display: flex; align-items: center; gap: 12px; }
-    .logo { width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; background: linear-gradient(135deg,#a855f7,#ec4899); box-shadow: 0 12px 40px rgba(168,85,247,.28); font-weight: 900; }
-    .brand h1 { font-size: 18px; margin: 0; }
-    .brand p { margin: 3px 0 0; color: #a1a1aa; font-size: 12px; }
-    .status { padding: 14px; border: 1px solid #27272a; border-radius: 16px; background: #111113; }
-    .status-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; }
-    .dot { width: 9px; height: 9px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 18px #22c55e; }
-    .muted { color: #a1a1aa; }
-    .features { display: grid; gap: 10px; color: #d4d4d8; font-size: 13px; }
-    .feature { padding: 11px 12px; border-radius: 12px; background: #18181b; border: 1px solid #27272a; }
-    .install { margin-top: auto; border: 1px solid #7c3aed; color: #fff; background: #5b21b6; padding: 11px 14px; border-radius: 12px; cursor: pointer; display: none; }
-    .main { min-width: 0; display: flex; flex-direction: column; height: 100vh; position: relative; }
-    .topbar { height: 70px; border-bottom: 1px solid #27272a; display: flex; align-items: center; justify-content: space-between; padding: 0 26px; background: rgba(9,9,11,.66); backdrop-filter: blur(16px); }
-    .topbar strong { font-size: 14px; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 18% 0%, #2e1065 0, #09090b 30%, #09090b 100%); }
+    button, input, textarea, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    .shell { min-height: 100vh; display: grid; grid-template-columns: 248px minmax(0,1fr); }
+    .sidebar { padding: 20px 16px; border-right: 1px solid var(--line); background: rgba(9,9,11,.92); backdrop-filter: blur(18px); display: flex; flex-direction: column; gap: 20px; }
+    .brand { display: flex; align-items: center; gap: 11px; padding: 4px 6px; }
+    .logo { width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; background: linear-gradient(135deg,#a855f7,#ec4899); box-shadow: 0 12px 34px rgba(168,85,247,.28); font-weight: 900; }
+    .brand h1 { margin: 0; font-size: 17px; }
+    .brand p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+    .nav { display: grid; gap: 6px; }
+    .nav-button { border: 0; background: transparent; color: #d4d4d8; padding: 11px 12px; border-radius: 12px; text-align: left; display: flex; align-items: center; justify-content: space-between; }
+    .nav-button:hover, .nav-button.active { background: #21153a; color: #fff; }
+    .nav-count { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; display: grid; place-items: center; font-size: 10px; background: #3f3f46; }
+    .runtime { margin-top: auto; border: 1px solid var(--line); background: var(--panel); border-radius: 15px; padding: 13px; font-size: 11px; color: var(--muted); }
+    .runtime-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #d4d4d8; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 14px var(--green); }
+    .install { margin-top: 10px; width: 100%; border: 1px solid #6d28d9; background: #3b0764; padding: 9px; border-radius: 10px; display: none; }
+    .main { min-width: 0; min-height: 100vh; position: relative; }
+    .topbar { height: 68px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; padding: 0 24px; background: rgba(9,9,11,.72); backdrop-filter: blur(18px); position: sticky; top: 0; z-index: 10; }
+    .topbar h2 { margin: 0; font-size: 15px; }
     .top-actions { display: flex; align-items: center; gap: 8px; }
-    .badge { font-size: 12px; color: #d8b4fe; background: #3b0764; border: 1px solid #6b21a8; border-radius: 999px; padding: 6px 10px; }
-    .approval-button { border: 1px solid #3f3f46; background: #18181b; border-radius: 999px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
-    .approval-count { display: inline-grid; place-items: center; min-width: 20px; height: 20px; margin-left: 5px; border-radius: 999px; background: #be123c; font-weight: 800; }
-    .chat { flex: 1; overflow-y: auto; padding: 34px max(20px, calc((100% - 920px)/2)); display: flex; flex-direction: column; gap: 18px; }
-    .message { max-width: 82%; padding: 15px 17px; border-radius: 18px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
-    .assistant { align-self: flex-start; background: #18181b; border: 1px solid #27272a; border-top-left-radius: 6px; }
-    .user { align-self: flex-end; background: linear-gradient(135deg,#6d28d9,#9333ea); border-top-right-radius: 6px; }
-    .meta { margin-top: 8px; font-size: 11px; color: #a1a1aa; }
-    .composer-wrap { border-top: 1px solid #27272a; padding: 18px max(20px, calc((100% - 920px)/2)); background: rgba(9,9,11,.82); backdrop-filter: blur(18px); }
-    .composer { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; border: 1px solid #3f3f46; background: #18181b; border-radius: 18px; padding: 9px 9px 9px 15px; box-shadow: 0 16px 50px rgba(0,0,0,.22); }
-    textarea { border: 0; outline: 0; resize: none; min-height: 44px; max-height: 160px; padding: 10px 4px; background: transparent; color: #fff; }
-    .send { width: 44px; height: 44px; border: 0; border-radius: 13px; background: linear-gradient(135deg,#7c3aed,#db2777); color: #fff; cursor: pointer; font-weight: 800; }
-    .send:disabled { opacity: .45; cursor: wait; }
-    .hint { text-align: center; margin-top: 9px; color: #71717a; font-size: 11px; }
-    .drawer { position: absolute; inset: 0 0 0 auto; width: min(520px, 100%); z-index: 20; background: rgba(9,9,11,.98); border-left: 1px solid #27272a; box-shadow: -20px 0 60px rgba(0,0,0,.45); display: none; flex-direction: column; }
+    .ghost-button { border: 1px solid #3f3f46; background: var(--panel2); border-radius: 10px; padding: 8px 10px; font-size: 12px; }
+    .notify-button.enabled { border-color: #166534; background: #052e16; }
+    .approval-count { display: inline-grid; place-items: center; min-width: 19px; height: 19px; margin-left: 5px; border-radius: 999px; background: #be123c; font-weight: 800; }
+    .view { display: none; padding: 24px; }
+    .view.active { display: block; }
+    .hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
+    .eyebrow { color: #c4b5fd; font-size: 12px; text-transform: uppercase; letter-spacing: .1em; }
+    .hero h1 { margin: 5px 0 5px; font-size: clamp(25px,3.2vw,42px); line-height: 1.1; }
+    .hero p { margin: 0; color: var(--muted); }
+    .date-chip { border: 1px solid #3f3f46; background: var(--panel); padding: 10px 13px; border-radius: 12px; font-size: 12px; color: #d4d4d8; white-space: nowrap; }
+    .stats { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 10px; margin-bottom: 18px; }
+    .stat { background: linear-gradient(180deg,#151517,#101012); border: 1px solid var(--line); border-radius: 15px; padding: 14px; min-height: 92px; }
+    .stat-label { color: var(--muted); font-size: 11px; }
+    .stat-value { font-size: 28px; font-weight: 800; margin-top: 9px; }
+    .stat.overdue .stat-value { color: #fca5a5; }
+    .stat.alerts .stat-value { color: #f9a8d4; }
+    .grid-2 { display: grid; grid-template-columns: minmax(300px,.85fr) minmax(360px,1.15fr); gap: 14px; }
+    .card { border: 1px solid var(--line); background: rgba(17,17,19,.94); border-radius: 17px; padding: 16px; }
+    .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+    .card-head h3 { margin: 0; font-size: 14px; }
+    .card-sub { color: var(--muted); font-size: 11px; margin-top: 3px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .field { display: grid; gap: 5px; }
+    .field.full { grid-column: 1/-1; }
+    label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+    input, select, textarea { width: 100%; border: 1px solid #3f3f46; background: #0d0d0f; border-radius: 10px; padding: 10px 11px; outline: 0; }
+    input:focus, select:focus, textarea:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
+    textarea { resize: vertical; min-height: 76px; }
+    .primary { border: 0; background: linear-gradient(135deg,#7c3aed,#db2777); padding: 10px 13px; border-radius: 10px; font-weight: 800; }
+    .secondary { border: 1px solid #3f3f46; background: #18181b; padding: 9px 12px; border-radius: 10px; }
+    .timeline, .reminder-list, .alert-list { display: grid; gap: 8px; }
+    .timeline-item, .reminder-card, .alert-card { border: 1px solid var(--line); background: #0d0d0f; border-radius: 12px; padding: 11px; }
+    .timeline-row, .item-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .timeline-time { color: #c4b5fd; font-size: 11px; min-width: 56px; }
+    .item-title { font-size: 13px; font-weight: 700; }
+    .item-meta { color: var(--muted); font-size: 10px; margin-top: 4px; }
+    .pill { display: inline-block; border-radius: 999px; padding: 3px 7px; font-size: 9px; background: #27272a; color: #d4d4d8; }
+    .pill.urgent { background: #7f1d1d; color: #fecaca; }
+    .pill.high { background: #78350f; color: #fde68a; }
+    .empty { color: #71717a; border: 1px dashed #3f3f46; border-radius: 12px; padding: 24px; text-align: center; font-size: 12px; }
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+    .section-head h1 { margin: 0 0 4px; font-size: 25px; }
+    .section-head p { margin: 0; color: var(--muted); font-size: 12px; }
+    .quick-add { display: grid; grid-template-columns: minmax(220px,1fr) 130px 190px auto; gap: 8px; margin-bottom: 16px; }
+    .board { display: grid; grid-template-columns: repeat(5,minmax(220px,1fr)); gap: 10px; overflow-x: auto; padding-bottom: 12px; }
+    .column { min-height: 460px; border: 1px solid var(--line); background: rgba(17,17,19,.8); border-radius: 15px; padding: 10px; }
+    .column.dragover { border-color: #8b5cf6; background: rgba(76,29,149,.14); }
+    .column-head { display: flex; justify-content: space-between; align-items: center; padding: 4px 4px 10px; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+    .column-count { color: var(--muted); }
+    .flow-list { display: grid; gap: 8px; }
+    .flow-card { border: 1px solid #303036; background: #0d0d0f; border-radius: 12px; padding: 11px; cursor: grab; }
+    .flow-card:active { cursor: grabbing; }
+    .flow-card.overdue { border-color: #7f1d1d; }
+    .flow-card .item-title { line-height: 1.35; }
+    .flow-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
+    .reminder-layout { display: grid; grid-template-columns: minmax(320px,.8fr) minmax(420px,1.2fr); gap: 14px; }
+    .schedule-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .schedule-option { display: none; }
+    .schedule-option.visible { display: grid; }
+    .weekdays { display: flex; flex-wrap: wrap; gap: 5px; }
+    .weekday { border: 1px solid #3f3f46; border-radius: 8px; padding: 6px 8px; font-size: 10px; }
+    .weekday input { width: auto; margin: 0 4px 0 0; }
+    .reminder-card { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
+    .reminder-next { color: #c4b5fd; font-size: 10px; margin-top: 5px; }
+    .toggle { border: 1px solid #3f3f46; background: #18181b; border-radius: 999px; padding: 6px 9px; font-size: 10px; }
+    .toggle.on { background: #14532d; border-color: #166534; }
+    .alert-card.unread { border-color: #7c3aed; background: #160f25; }
+    .alert-actions { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
+    .alert-actions button { border: 1px solid #3f3f46; background: #18181b; border-radius: 8px; padding: 6px 8px; font-size: 10px; }
+    .chat-shell { height: calc(100vh - 116px); border: 1px solid var(--line); border-radius: 17px; overflow: hidden; display: flex; flex-direction: column; background: rgba(17,17,19,.9); }
+    .chat { flex: 1; overflow: auto; padding: 24px max(16px,calc((100% - 860px)/2)); display: flex; flex-direction: column; gap: 14px; }
+    .message { max-width: 82%; padding: 13px 15px; border-radius: 16px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .assistant { align-self: flex-start; background: #18181b; border: 1px solid #27272a; border-top-left-radius: 5px; }
+    .user { align-self: flex-end; background: linear-gradient(135deg,#6d28d9,#9333ea); border-top-right-radius: 5px; }
+    .meta { margin-top: 7px; font-size: 10px; color: var(--muted); }
+    .composer-wrap { border-top: 1px solid var(--line); padding: 13px max(14px,calc((100% - 860px)/2)); background: rgba(9,9,11,.88); }
+    .composer { display: grid; grid-template-columns: 1fr auto; gap: 8px; border: 1px solid #3f3f46; background: #18181b; border-radius: 14px; padding: 7px 7px 7px 12px; }
+    .composer textarea { border: 0; background: transparent; min-height: 42px; padding: 9px 3px; }
+    .send { width: 42px; height: 42px; border: 0; border-radius: 11px; background: linear-gradient(135deg,#7c3aed,#db2777); font-weight: 900; }
+    .drawer { position: fixed; inset: 0 0 0 auto; width: min(520px,100%); z-index: 40; background: rgba(9,9,11,.99); border-left: 1px solid var(--line); box-shadow: -20px 0 60px rgba(0,0,0,.5); display: none; flex-direction: column; }
     .drawer.open { display: flex; }
-    .drawer-head { height: 70px; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #27272a; }
-    .drawer-head h2 { margin: 0; font-size: 16px; }
-    .drawer-close { border: 1px solid #3f3f46; background: #18181b; border-radius: 10px; width: 36px; height: 36px; cursor: pointer; }
-    .approval-list { flex: 1; overflow: auto; padding: 18px; display: grid; align-content: start; gap: 12px; }
-    .approval-empty { color: #71717a; border: 1px dashed #3f3f46; border-radius: 16px; padding: 28px; text-align: center; }
-    .approval-card { border: 1px solid #3f3f46; background: #111113; border-radius: 16px; padding: 15px; }
-    .approval-title { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
-    .approval-title strong { font-size: 14px; overflow-wrap: anywhere; }
-    .risk { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; border-radius: 999px; padding: 4px 7px; background: #3f3f46; }
+    .drawer-head { height: 68px; padding: 0 18px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
+    .drawer-head h3 { margin: 0; }
+    .drawer-list { flex: 1; overflow: auto; padding: 15px; display: grid; align-content: start; gap: 10px; }
+    .approval-card { border: 1px solid #3f3f46; background: var(--panel); border-radius: 14px; padding: 13px; }
+    .approval-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .risk { font-size: 9px; text-transform: uppercase; border-radius: 999px; padding: 3px 6px; background: #3f3f46; }
     .risk.external { background: #78350f; color: #fde68a; }
     .risk.dangerous { background: #7f1d1d; color: #fecaca; }
-    .approval-args { margin: 12px 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: #d4d4d8; background: #09090b; border-radius: 10px; padding: 10px; }
-    .approval-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .approval-actions button { border: 0; border-radius: 10px; padding: 10px; cursor: pointer; font-weight: 700; }
-    .approve { background: #166534; }
-    .deny { background: #3f3f46; }
-    .connector { margin-top: 8px; font-size: 11px; color: #a1a1aa; }
-    @media (max-width: 780px) {
+    .approval-args { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; font: 11px/1.5 ui-monospace,monospace; color: #d4d4d8; background: #09090b; border-radius: 9px; padding: 9px; }
+    .approval-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    .approval-actions button { border: 0; border-radius: 9px; padding: 9px; font-weight: 700; }
+    .approve { background: #166534; } .deny { background: #3f3f46; }
+    .toast-stack { position: fixed; right: 18px; bottom: 18px; z-index: 60; display: grid; gap: 8px; width: min(360px,calc(100% - 36px)); }
+    .toast { border: 1px solid #4c1d95; background: #1f1235; border-radius: 12px; padding: 11px 13px; box-shadow: 0 18px 50px rgba(0,0,0,.4); font-size: 12px; }
+    @media (max-width: 1180px) { .stats { grid-template-columns: repeat(3,1fr); } .grid-2,.reminder-layout { grid-template-columns: 1fr; } }
+    @media (max-width: 760px) {
       .shell { grid-template-columns: 1fr; }
-      .sidebar { display: none; }
-      .main { height: 100dvh; }
-      .topbar { padding: 0 16px; }
-      .badge { display: none; }
-      .chat { padding: 22px 14px; }
-      .message { max-width: 92%; }
-      .composer-wrap { padding: 12px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
-      .drawer { width: 100%; }
+      .sidebar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; height: 66px; padding: 7px; border: 0; border-top: 1px solid var(--line); flex-direction: row; }
+      .brand,.runtime { display: none; }
+      .nav { width: 100%; grid-template-columns: repeat(4,1fr); gap: 4px; }
+      .nav-button { font-size: 10px; justify-content: center; text-align: center; padding: 8px 4px; }
+      .nav-count { display: none; }
+      .main { padding-bottom: 66px; }
+      .topbar { padding: 0 12px; }
+      .topbar h2 { font-size: 13px; }
+      .view { padding: 15px 12px; }
+      .hero { align-items: flex-start; flex-direction: column; }
+      .date-chip { display: none; }
+      .stats { grid-template-columns: repeat(2,1fr); }
+      .quick-add { grid-template-columns: 1fr; }
+      .board { grid-template-columns: repeat(5,82vw); }
+      .form-grid,.schedule-fields { grid-template-columns: 1fr; }
+      .reminder-card { grid-template-columns: 1fr; }
+      .ghost-label { display: none; }
+      .chat-shell { height: calc(100dvh - 166px); }
     }
   </style>
 </head>
 <body>
-  <div class="shell">
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="logo">C</div>
-        <div><h1>CherryAgent</h1><p>Tool-calling office secretary</p></div>
-      </div>
-      <div class="status">
-        <div class="status-row"><span>Agent runtime</span><span class="dot" id="statusDot"></span></div>
-        <div class="muted" id="statusText" style="margin-top:8px;font-size:12px">Checking...</div>
-        <div class="connector" id="connectorStatus">Google Workspace: checking...</div>
-      </div>
-      <div class="features">
-        <div class="feature">Multi-step tool calling</div>
-        <div class="feature">Gmail, Calendar, Drive</div>
-        <div class="feature">Memory, tasks, notes</div>
-        <div class="feature">Approval-gated external actions</div>
-      </div>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><div class="logo">C</div><div><h1>CherryAgent</h1><p>Office planner & tool-calling secretary</p></div></div>
+    <nav class="nav">
+      <button class="nav-button active" data-view="dashboard"><span>Dashboard</span></button>
+      <button class="nav-button" data-view="flow"><span>Flow board</span><span class="nav-count" id="flowCount">0</span></button>
+      <button class="nav-button" data-view="reminders"><span>Reminders</span><span class="nav-count" id="alertNavCount">0</span></button>
+      <button class="nav-button" data-view="chat"><span>Ask Cherry</span></button>
+    </nav>
+    <div class="runtime">
+      <div class="runtime-row"><span>Agent runtime</span><span class="dot" id="statusDot"></span></div>
+      <div id="statusText" style="margin-top:7px">Checking...</div>
+      <div id="connectorStatus" style="margin-top:4px">Google Workspace: checking...</div>
+      <div id="schedulerStatus" style="margin-top:4px">Scheduler: checking...</div>
       <button class="install" id="installButton">Install CherryAgent</button>
-    </aside>
-    <main class="main">
-      <header class="topbar">
-        <strong>Office Autopilot</strong>
-        <div class="top-actions">
-          <button class="approval-button" id="approvalButton">Approvals <span class="approval-count" id="approvalCount">0</span></button>
-          <span class="badge" id="toolCount">Tools loading...</span>
-        </div>
-      </header>
-      <section class="chat" id="chat">
-        <div class="message assistant">I'm CherryAgent. Give me office work to do. I can use tools, work with Gmail, Calendar and Drive, create drafts, manage tasks, and ask for approval before consequential external actions.</div>
-      </section>
-      <div class="composer-wrap">
-        <form class="composer" id="composer">
-          <textarea id="message" rows="1" placeholder="Ask Cherry to do office work..." autocomplete="off"></textarea>
-          <button class="send" id="sendButton" aria-label="Send">↑</button>
-        </form>
-        <div class="hint">External and dangerous actions pause in the approval inbox before execution.</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <h2 id="viewTitle">Office Dashboard</h2>
+      <div class="top-actions">
+        <button class="ghost-button notify-button" id="notifyButton"><span class="ghost-label">Browser alerts</span> <span id="notifyState">Off</span></button>
+        <button class="ghost-button" id="approvalButton"><span class="ghost-label">Approvals</span><span class="approval-count" id="approvalCount">0</span></button>
       </div>
-      <aside class="drawer" id="approvalDrawer" aria-label="Approval inbox">
-        <div class="drawer-head">
-          <div><h2>Approval Inbox</h2><div class="muted" style="font-size:12px;margin-top:3px">Review actions before Cherry executes them</div></div>
-          <button class="drawer-close" id="approvalClose" aria-label="Close">×</button>
+    </header>
+
+    <section class="view active" id="view-dashboard">
+      <div class="hero">
+        <div><div class="eyebrow">Cherry Office Autopilot</div><h1>Plan the work. Let Cherry run the flow.</h1><p>Today, overdue work, active flows, schedules and alerts in one place.</p></div>
+        <div class="date-chip" id="todayDate"></div>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="stat-label">Today</div><div class="stat-value" id="statToday">0</div></div>
+        <div class="stat overdue"><div class="stat-label">Overdue</div><div class="stat-value" id="statOverdue">0</div></div>
+        <div class="stat"><div class="stat-label">Doing</div><div class="stat-value" id="statDoing">0</div></div>
+        <div class="stat"><div class="stat-label">Waiting</div><div class="stat-value" id="statWaiting">0</div></div>
+        <div class="stat"><div class="stat-label">Active reminders</div><div class="stat-value" id="statReminders">0</div></div>
+        <div class="stat alerts"><div class="stat-label">Unread alerts</div><div class="stat-value" id="statAlerts">0</div></div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-head"><div><h3>Quick plan</h3><div class="card-sub">Add work directly to the flow board</div></div></div>
+          <form class="form-grid" id="quickPlanForm">
+            <div class="field full"><label>Task</label><input id="quickTitle" required placeholder="Prepare weekly IDC report" /></div>
+            <div class="field"><label>Priority</label><select id="quickPriority"><option>normal</option><option>high</option><option>urgent</option><option>low</option></select></div>
+            <div class="field"><label>Due</label><input id="quickDue" type="datetime-local" /></div>
+            <div class="field full"><button class="primary" type="submit">Add to plan</button></div>
+          </form>
         </div>
-        <div class="approval-list" id="approvalList"></div>
-      </aside>
-    </main>
-  </div>
-  <script type="module" src="/app.js"></script>
+        <div class="card">
+          <div class="card-head"><div><h3>Today timeline</h3><div class="card-sub">Scheduled work for today</div></div><button class="secondary" data-switch="flow">Open flow</button></div>
+          <div class="timeline" id="todayTimeline"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="view-flow">
+      <div class="section-head"><div><h1>Flow board</h1><p>Drag work between stages. Dependencies, priority and timing stay attached.</p></div></div>
+      <form class="quick-add" id="flowAddForm">
+        <input id="flowTitle" required placeholder="Add work item..." />
+        <select id="flowPriority"><option>normal</option><option>high</option><option>urgent</option><option>low</option></select>
+        <input id="flowDue" type="datetime-local" />
+        <button class="primary" type="submit">Add</button>
+      </form>
+      <div class="board" id="flowBoard"></div>
+    </section>
+
+    <section class="view" id="view-reminders">
+      <div class="section-head"><div><h1>Reminder center</h1><p>One-time, interval, daily, weekdays, weekly, monthly and cron schedules.</p></div><button class="secondary" id="runSchedulerButton">Run scheduler now</button></div>
+      <div class="reminder-layout">
+        <div class="card">
+          <div class="card-head"><div><h3>Create reminder</h3><div class="card-sub">Persistent scheduler · default timezone Asia/Bangkok</div></div></div>
+          <form class="form-grid" id="reminderForm">
+            <div class="field full"><label>Title</label><input id="reminderTitle" required placeholder="Check morning incidents" /></div>
+            <div class="field full"><label>Message</label><textarea id="reminderMessage" placeholder="What should Cherry remind you about?"></textarea></div>
+            <div class="field"><label>Schedule</label><select id="scheduleKind"><option value="once">Once</option><option value="interval">Every N minutes</option><option value="daily">Daily</option><option value="weekdays">Weekdays</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="cron">Cron</option></select></div>
+            <div class="field"><label>Timezone</label><input id="scheduleTimezone" value="Asia/Bangkok" /></div>
+            <div class="field full schedule-option visible" data-kind="once"><label>Date & time</label><input id="scheduleOnceAt" type="datetime-local" /></div>
+            <div class="field schedule-option" data-kind="interval"><label>Every minutes</label><input id="scheduleInterval" type="number" min="1" value="60" /></div>
+            <div class="field schedule-option" data-kind="daily weekdays weekly monthly"><label>Time</label><input id="scheduleTime" type="time" value="09:00" /></div>
+            <div class="field full schedule-option" data-kind="weekly"><label>Weekdays</label><div class="weekdays" id="weeklyDays"><label class="weekday"><input type="checkbox" value="1" checked />Mon</label><label class="weekday"><input type="checkbox" value="2" />Tue</label><label class="weekday"><input type="checkbox" value="3" />Wed</label><label class="weekday"><input type="checkbox" value="4" />Thu</label><label class="weekday"><input type="checkbox" value="5" />Fri</label><label class="weekday"><input type="checkbox" value="6" />Sat</label><label class="weekday"><input type="checkbox" value="0" />Sun</label></div></div>
+            <div class="field schedule-option" data-kind="monthly"><label>Day of month</label><input id="scheduleMonthDay" type="number" min="1" max="31" value="1" /></div>
+            <div class="field full schedule-option" data-kind="cron"><label>Cron expression</label><input id="scheduleCron" placeholder="0 9 * * 1-5" /></div>
+            <div class="field full"><label>Channels</label><div class="weekdays"><label class="weekday"><input type="checkbox" class="channel" value="in_app" checked />In app</label><label class="weekday"><input type="checkbox" class="channel" value="browser" checked />Browser</label><label class="weekday"><input type="checkbox" class="channel" value="email" />Email</label><label class="weekday"><input type="checkbox" class="channel" value="line" />LINE</label><label class="weekday"><input type="checkbox" class="channel" value="slack" />Slack</label><label class="weekday"><input type="checkbox" class="channel" value="webhook" />Webhook</label></div></div>
+            <div class="field full"><button class="primary" type="submit">Create reminder schedule</button></div>
+          </form>
+        </div>
+        <div style="display:grid;gap:14px;align-content:start">
+          <div class="card"><div class="card-head"><div><h3>Active schedules</h3><div class="card-sub">Enable, disable and inspect next execution</div></div></div><div class="reminder-list" id="reminderList"></div></div>
+          <div class="card"><div class="card-head"><div><h3>Alerts</h3><div class="card-sub">Read, snooze 10m / 1h / tomorrow, or let browser notifications surface them</div></div></div><div class="alert-list" id="alertList"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="view-chat">
+      <div class="chat-shell">
+        <div class="chat" id="chat"><div class="message assistant">I'm CherryAgent. Ask me to plan work, build a flow, set reminders, inspect today's schedule, read Gmail, manage Calendar and Drive, or execute multi-step office work with tools.</div></div>
+        <div class="composer-wrap"><form class="composer" id="composer"><textarea id="message" rows="1" placeholder="Ask Cherry to plan or do office work..." autocomplete="off"></textarea><button class="send" id="sendButton" aria-label="Send">↑</button></form></div>
+      </div>
+    </section>
+
+    <aside class="drawer" id="approvalDrawer" aria-label="Approval inbox">
+      <div class="drawer-head"><div><h3>Approval Inbox</h3><div class="card-sub">Review consequential actions before Cherry runs them</div></div><button class="ghost-button" id="approvalClose">×</button></div>
+      <div class="drawer-list" id="approvalList"></div>
+    </aside>
+  </main>
+</div>
+<div class="toast-stack" id="toastStack"></div>
+<script type="module" src="/app.js"></script>
 </body>
 </html>
