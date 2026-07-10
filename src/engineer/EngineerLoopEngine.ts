@@ -151,9 +151,9 @@ export class EngineerLoopEngine {
   async startLoop(input: {
     objective: string;
     successCriteria: string[];
-    maxIterations?: number;
-    planItemId?: string;
-    hypothesis?: string;
+    maxIterations?: number | undefined;
+    planItemId?: string | undefined;
+    hypothesis?: string | undefined;
   }): Promise<EngineerLoop> {
     return this.#mutate((data) => {
       const objective = requiredText(input.objective, "objective");
@@ -201,10 +201,10 @@ export class EngineerLoopEngine {
     loopId: string;
     phase: EngineerPhase;
     summary: string;
-    evidence?: string[];
-    tool?: string;
-    error?: string;
-    nextPhase?: EngineerPhase;
+    evidence?: string[] | undefined;
+    tool?: string | undefined;
+    error?: string | undefined;
+    nextPhase?: EngineerPhase | undefined;
   }): Promise<EngineerLoop> {
     return this.#mutate((data) => {
       const loop = data.loops.find((candidate) => candidate.id === input.loopId);
@@ -258,11 +258,12 @@ export class EngineerLoopEngine {
       if (!loop) throw new Error(`Engineer loop not found: ${input.loopId}`);
       if (loop.status !== "running") throw new Error(`Engineer loop ${loop.id} is ${loop.status}, not running`);
       if (loop.iteration >= loop.maxIterations) {
+        const now = nowIso();
         loop.status = "failed";
         loop.stopReason = `Retry budget exhausted after ${loop.maxIterations} iterations`;
-        loop.completedAt = nowIso();
-        loop.updatedAt = loop.completedAt;
-        throw new Error(loop.stopReason);
+        loop.completedAt = now;
+        loop.updatedAt = now;
+        return loop;
       }
       const now = nowIso();
       loop.iteration += 1;
@@ -322,9 +323,9 @@ export class EngineerLoopEngine {
     outcome: string;
     rootCause: string;
     fix: string;
-    rollback?: string;
-    prevention?: string[];
-    runbookTitle?: string;
+    rollback?: string | undefined;
+    prevention?: string[] | undefined;
+    runbookTitle?: string | undefined;
   }): Promise<{ loop: EngineerLoop; runbook: EngineerRunbook }> {
     return this.#mutate((data) => {
       const loop = data.loops.find((candidate) => candidate.id === input.loopId);
