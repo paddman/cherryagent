@@ -69,6 +69,10 @@ export const config = {
     ),
   },
   memoryFile: resolve(process.env.CHERRY_MEMORY_FILE ?? ".cherry/memory.json"),
+  plannerFile: resolve(process.env.CHERRY_PLANNER_FILE ?? ".cherry/planner.json"),
+  scheduler: {
+    intervalMs: Math.max(1_000, integerEnv("CHERRY_SCHEDULER_INTERVAL_MS", 15_000)),
+  },
   workspaceRoot: resolve(process.env.CHERRY_WORKSPACE ?? "workspace"),
   server: {
     host: process.env.CHERRY_HOST ?? "0.0.0.0",
