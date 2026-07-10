@@ -3,6 +3,7 @@ import { CherryAgent } from "./agent/CherryAgent.js";
 import { config } from "./config.js";
 import { GoogleAuth } from "./connectors/google/GoogleAuth.js";
 import { GoogleWorkspaceClient } from "./connectors/google/GoogleWorkspaceClient.js";
+import { EngineerLoopEngine } from "./engineer/EngineerLoopEngine.js";
 import { OpenAICompatibleProvider } from "./llm/OpenAICompatibleProvider.js";
 import { MemoryStore } from "./memory/MemoryStore.js";
 import { NotificationDispatcher } from "./planner/NotificationDispatcher.js";
@@ -10,6 +11,7 @@ import { PlannerStore } from "./planner/PlannerStore.js";
 import { SchedulerEngine } from "./planner/SchedulerEngine.js";
 import { ApprovalGate } from "./safety/ApprovalGate.js";
 import { ToolRegistry } from "./tools/ToolRegistry.js";
+import { createEngineerTools } from "./tools/builtin/engineer.js";
 import { fileTools } from "./tools/builtin/files.js";
 import { createGoogleWorkspaceTools } from "./tools/builtin/googleWorkspace.js";
 import { createOfficeTools } from "./tools/builtin/office.js";
@@ -33,6 +35,7 @@ export async function createRuntime(): Promise<{
   tools: ToolRegistry;
   memory: MemoryStore;
   planner: PlannerStore;
+  engineer: EngineerLoopEngine;
   scheduler: SchedulerEngine;
   approvalGate: ApprovalGate;
   connectors: RuntimeConnectors;
@@ -43,6 +46,7 @@ export async function createRuntime(): Promise<{
   const tools = new ToolRegistry(approvalGate);
   const memory = new MemoryStore(config.memoryFile);
   const planner = new PlannerStore(config.plannerFile);
+  const engineer = new EngineerLoopEngine(config.engineerFile);
 
   const googleAuth = new GoogleAuth({
     ...(config.google.accessToken ? { accessToken: config.google.accessToken } : {}),
@@ -58,6 +62,7 @@ export async function createRuntime(): Promise<{
     ...fileTools,
     ...createOfficeTools(memory),
     ...createPlannerTools(planner),
+    ...createEngineerTools(engineer),
     ...createGoogleWorkspaceTools(google),
   ]) {
     tools.register(tool);
@@ -94,6 +99,7 @@ export async function createRuntime(): Promise<{
     tools,
     memory,
     planner,
+    engineer,
     scheduler,
     approvalGate,
     connectors: {
