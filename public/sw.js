@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cherryagent-shell-v2';
+const CACHE_NAME = 'cherryagent-shell-v3';
 const APP_SHELL = ['/', '/index.html', '/app.js', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -23,7 +23,8 @@ self.addEventListener('fetch', (event) => {
   if (
     url.pathname === '/health' ||
     url.pathname === '/tools' ||
-    url.pathname === '/approvals'
+    url.pathname === '/approvals' ||
+    url.pathname.startsWith('/planner/')
   ) {
     event.respondWith(fetch(request));
     return;
@@ -37,5 +38,16 @@ self.addEventListener('fetch', (event) => {
         return response;
       })
       .catch(() => caches.match(request).then((cached) => cached || caches.match('/index.html'))),
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      const existing = clients.find((client) => 'focus' in client);
+      if (existing) return existing.focus();
+      return self.clients.openWindow('/');
+    }),
   );
 });
