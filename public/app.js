@@ -6,6 +6,7 @@ localStorage.setItem('cherry-session-id', sessionId);
 
 const state = {
   dashboard: null,
+  engineerDashboard: null,
   approvals: [],
   currentView: 'dashboard',
   draggedItemId: null,
@@ -16,6 +17,7 @@ const viewTitles = {
   dashboard: 'Office Dashboard',
   flow: 'Flow Planner',
   reminders: 'Reminder Center',
+  engineer: 'Engineer Loop Engine',
   chat: 'Ask Cherry',
 };
 
@@ -26,6 +28,8 @@ const flowColumns = [
   ['waiting', 'Waiting'],
   ['done', 'Done'],
 ];
+
+const engineerPhases = ['plan', 'execute', 'observe', 'diagnose', 'patch', 'test', 'verify', 'learn'];
 
 function toast(message, duration = 3600) {
   const node = document.createElement('div');
@@ -60,10 +64,6 @@ function formatTime(value) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function escapeText(value) {
-  return String(value ?? '');
-}
-
 function isOverdue(item) {
   return item.status !== 'done' && item.dueAt && new Date(item.dueAt).getTime() < Date.now();
 }
@@ -72,10 +72,11 @@ function switchView(name) {
   if (!viewTitles[name]) return;
   state.currentView = name;
   $$('.view').forEach((view) => view.classList.remove('active'));
-  $(`#view-${name}`).classList.add('active');
+  $(`#view-${name}`)?.classList.add('active');
   $$('.nav-button').forEach((button) => button.classList.toggle('active', button.dataset.view === name));
   $('#viewTitle').textContent = viewTitles[name];
   if (name === 'chat') $('#message').focus();
+  if (name === 'engineer') void loadEngineer();
 }
 
 $$('.nav-button').forEach((button) => button.addEventListener('click', () => switchView(button.dataset.view)));
@@ -87,10 +88,14 @@ async function checkHealth() {
     $('#statusText').textContent = `${data.model} · ${data.tools} tools`;
     $('#connectorStatus').textContent = `Google Workspace: ${data.connectors?.google ? 'connected' : 'not configured'}`;
     $('#schedulerStatus').textContent = `Scheduler: ${data.planner?.schedulerRunning ? 'running' : 'stopped'} · ${Math.round((data.planner?.schedulerIntervalMs || 0) / 1000)}s`;
+    const activeEngineer = (data.engineer?.running || 0) + (data.engineer?.blocked || 0);
+    $('#engineerStatus').textContent = `Engineer Loop: ${data.engineer?.running || 0} running · ${data.engineer?.blocked || 0} blocked`;
+    $('#engineerNavCount').textContent = String(activeEngineer);
     $('#statusDot').style.background = '#22c55e';
   } catch (error) {
     $('#statusText').textContent = error instanceof Error ? error.message : String(error);
     $('#schedulerStatus').textContent = 'Scheduler: unavailable';
+    $('#engineerStatus').textContent = 'Engineer Loop: unavailable';
     $('#statusDot').style.background = '#ef4444';
   }
 }
@@ -157,7 +162,12 @@ function renderFlow(dashboard) {
     const items = dashboard.flow?.[status] || [];
     const head = document.createElement('div');
     head.className = 'column-head';
-    head.innerHTML = `<span>${label}</span><span class="column-count">${items.length}</span>`;
+    const headLabel = document.createElement('span');
+    headLabel.textContent = label;
+    const count = document.createElement('span');
+    count.className = 'column-count';
+    count.textContent = String(items.length);
+    head.append(headLabel, count);
     const list = document.createElement('div');
     list.className = 'flow-list';
 
@@ -289,7 +299,7 @@ async function browserNotify(alert) {
       new Notification(alert.title, { body: alert.message, tag: `cherry-${alert.id}` });
     }
   } catch {
-    // Browser notification is best-effort; the in-app alert remains durable.
+    // Best effort. Durable in-app alert remains available.
   }
 }
 
@@ -493,6 +503,155 @@ $('#notifyButton').addEventListener('click', async () => {
 });
 updateNotificationButton();
 
+function renderEngineerStats(dashboard) {
+  const stats = dashboard.stats || {};
+  $('#engineerStatRunning').textContent = String(stats.running || 0);
+  $('#engineerStatBlocked').textContent = String(stats.blocked || 0);
+  $('#engineerStatSucceeded').textContent = String(stats.succeeded || 0);
+  $('#engineerStatFailed').textContent = String(stats.failed || 0);
+  $('#engineerStatRunbooks').textContent = String(stats.runbooks || 0);
+  $('#engineerNavCount').textContent = String((stats.running || 0) + (stats.blocked || 0));
+}
+
+function renderEngineerPhases(loop) {
+  const track = document.createElement('div');
+  track.className = 'engineer-phase-track';
+  const activeIndex = engineerPhases.indexOf(loop.phase);
+  for (const [index, phase] of engineerPhases.entries()) {
+    const node = document.createElement('div');
+    node.className = 'engineer-phase';
+    if (index < activeIndex || loop.status === 'succeeded') node.classList.add('done');
+    if (index === activeIndex && loop.status !== 'succeeded') node.classList.add('active');
+    node.textContent = phase;
+    track.append(node);
+  }
+  return track;
+}
+
+function renderEngineerLoops(loops) {
+  const container = $('#engineerLoopList');
+  container.replaceChildren();
+  if (!loops.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = 'No engineering loops yet. Start one here or ask Cherry to solve a technical task.';
+    container.append(empty);
+    return;
+  }
+
+  for (const loop of loops) {
+    const card = document.createElement('article');
+    card.className = `engineer-loop-card ${loop.status}`;
+    const head = document.createElement('div');
+    head.className = 'engineer-loop-head';
+    const left = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'item-title';
+    title.textContent = loop.objective;
+    const meta = document.createElement('div');
+    meta.className = 'item-meta';
+    meta.textContent = `Iteration ${loop.iteration}/${loop.maxIterations} · phase ${loop.phase} · updated ${formatDateTime(loop.updatedAt)}`;
+    left.append(title, meta);
+    const status = document.createElement('span');
+    status.className = `engineer-status ${loop.status}`;
+    status.textContent = loop.status;
+    head.append(left, status);
+
+    const criteria = document.createElement('div');
+    criteria.className = 'engineer-evidence';
+    criteria.textContent = `Success criteria:\n${(loop.successCriteria || []).map((item) => `• ${item}`).join('\n')}`;
+
+    const latest = (loop.events || []).at(-1);
+    const evidence = document.createElement('div');
+    evidence.className = 'engineer-evidence';
+    if (latest) {
+      const lines = [`Latest ${latest.phase}: ${latest.summary}`];
+      if (latest.evidence?.length) lines.push(...latest.evidence.map((item) => `• ${item}`));
+      if (latest.error) lines.push(`Error: ${latest.error}`);
+      evidence.textContent = lines.join('\n');
+    } else {
+      evidence.textContent = 'Waiting for the plan phase to be recorded.';
+    }
+
+    card.append(head, renderEngineerPhases(loop), criteria, evidence);
+    container.append(card);
+  }
+}
+
+function renderEngineerRunbooks(runbooks) {
+  const container = $('#engineerRunbookList');
+  container.replaceChildren();
+  if (!runbooks.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = 'No learned runbooks yet. Verified successful loops will create them automatically.';
+    container.append(empty);
+    return;
+  }
+
+  for (const runbook of runbooks) {
+    const card = document.createElement('article');
+    card.className = 'runbook-card';
+    const title = document.createElement('div');
+    title.className = 'item-title';
+    title.textContent = runbook.title;
+    const meta = document.createElement('div');
+    meta.className = 'item-meta';
+    meta.textContent = formatDateTime(runbook.createdAt);
+    const details = document.createElement('details');
+    const summary = document.createElement('summary');
+    summary.textContent = 'Root cause · fix · verify · rollback · prevention';
+    const body = document.createElement('div');
+    body.className = 'runbook-body';
+    const sections = [
+      ['Root cause', [runbook.rootCause]],
+      ['Fix', [runbook.fix]],
+      ['Verification', runbook.verification || []],
+      ['Rollback', runbook.rollback || []],
+      ['Prevention', runbook.prevention || []],
+    ];
+    body.textContent = sections.map(([name, values]) => `${name}:\n${values.length ? values.map((value) => `• ${value}`).join('\n') : '• Not recorded'}`).join('\n\n');
+    details.append(summary, body);
+    card.append(title, meta, details);
+    container.append(card);
+  }
+}
+
+async function loadEngineer() {
+  try {
+    const data = await api('/engineer/dashboard');
+    state.engineerDashboard = data.dashboard;
+    renderEngineerStats(data.dashboard);
+    renderEngineerLoops(data.dashboard.recent || []);
+    renderEngineerRunbooks(data.dashboard.runbooks || []);
+  } catch (error) {
+    toast(`Engineer Loop unavailable: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+$('#engineerLoopForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    const successCriteria = $('#engineerCriteria').value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+    const body = {
+      objective: $('#engineerObjective').value.trim(),
+      successCriteria,
+      maxIterations: Number($('#engineerMaxIterations').value || 5),
+      hypothesis: $('#engineerHypothesis').value.trim(),
+    };
+    const data = await api('/engineer/loops', { method: 'POST', body: JSON.stringify(body) });
+    $('#engineerObjective').value = '';
+    $('#engineerCriteria').value = '';
+    $('#engineerHypothesis').value = '';
+    toast(`Engineer Loop started · ${data.loop.id.slice(0, 8)}`);
+    await loadEngineer();
+  } catch (error) {
+    toast(`Could not start Engineer Loop: ${error instanceof Error ? error.message : String(error)}`);
+  }
+});
+
+$('#refreshEngineerButton').addEventListener('click', () => void loadEngineer());
+
 function addMessage(text, role, meta = '') {
   const node = document.createElement('div');
   node.className = `message ${role}`;
@@ -531,7 +690,7 @@ $('#composer').addEventListener('submit', async (event) => {
     pending.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
   } finally {
     $('#sendButton').disabled = false;
-    await Promise.all([loadPlanner(), loadApprovals(), checkHealth()]);
+    await Promise.all([loadPlanner(), loadEngineer(), loadApprovals(), checkHealth()]);
   }
 });
 
@@ -576,19 +735,22 @@ function renderApprovals(approvals) {
     const actions = document.createElement('div');
     actions.className = 'approval-actions';
     const deny = document.createElement('button');
-    deny.className = 'deny'; deny.textContent = 'Deny';
+    deny.className = 'deny';
+    deny.textContent = 'Deny';
     const approve = document.createElement('button');
-    approve.className = 'approve'; approve.textContent = 'Approve & run';
+    approve.className = 'approve';
+    approve.textContent = 'Approve & run';
 
     const runAction = async (action) => {
-      approve.disabled = true; deny.disabled = true;
+      approve.disabled = true;
+      deny.disabled = true;
       try {
         const data = await api(`/approvals/${encodeURIComponent(approval.id)}/${action}`, { method: 'POST', body: '{}' });
         if (action === 'approve') toast(data.result?.ok ? `Executed: ${approval.tool}` : `Execution failed: ${approval.tool}`);
       } catch (error) {
         toast(`Approval failed: ${error instanceof Error ? error.message : String(error)}`);
       } finally {
-        await Promise.all([loadApprovals(), loadPlanner(), checkHealth()]);
+        await Promise.all([loadApprovals(), loadPlanner(), loadEngineer(), checkHealth()]);
       }
     };
     approve.addEventListener('click', () => runAction('approve'));
@@ -609,7 +771,7 @@ async function loadApprovals() {
   }
 }
 
-$('#approvalButton').addEventListener('click', () => { $('#approvalDrawer').classList.add('open'); loadApprovals(); });
+$('#approvalButton').addEventListener('click', () => { $('#approvalDrawer').classList.add('open'); void loadApprovals(); });
 $('#approvalClose').addEventListener('click', () => $('#approvalDrawer').classList.remove('open'));
 
 let deferredInstallPrompt = null;
@@ -630,7 +792,8 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').cat
 
 $('#todayDate').textContent = new Date().toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-await Promise.all([checkHealth(), loadPlanner(), loadApprovals()]);
+await Promise.all([checkHealth(), loadPlanner(), loadEngineer(), loadApprovals()]);
 setInterval(loadPlanner, 5000);
+setInterval(loadEngineer, 5000);
 setInterval(loadApprovals, 5000);
 setInterval(checkHealth, 30000);
