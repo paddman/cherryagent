@@ -14,5 +14,12 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      - name: Capture typecheck
+        run: npm run typecheck 2>&1 | tee typecheck.log
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: planner-typecheck-log
+          path: typecheck.log
       - run: npm run typecheck
       - run: npm run build
