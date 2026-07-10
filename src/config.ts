@@ -68,6 +68,13 @@ export const config = {
       googleAccessToken || (googleClientId && googleClientSecret && googleRefreshToken),
     ),
   },
+  notifications: {
+    emailTo: optionalEnv("CHERRY_NOTIFY_EMAIL_TO"),
+    slackWebhookUrl: optionalEnv("CHERRY_NOTIFY_SLACK_WEBHOOK"),
+    webhookUrl: optionalEnv("CHERRY_NOTIFY_WEBHOOK_URL"),
+    lineChannelAccessToken: optionalEnv("CHERRY_NOTIFY_LINE_CHANNEL_ACCESS_TOKEN"),
+    lineTo: optionalEnv("CHERRY_NOTIFY_LINE_TO"),
+  },
   memoryFile: resolve(process.env.CHERRY_MEMORY_FILE ?? ".cherry/memory.json"),
   plannerFile: resolve(process.env.CHERRY_PLANNER_FILE ?? ".cherry/planner.json"),
   scheduler: {
