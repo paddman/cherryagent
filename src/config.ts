@@ -1,0 +1,57 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import type { RiskLevel } from "./core/types.js";
+
+function loadDotEnv(path = ".env"): void {
+  const absolute = resolve(path);
+  if (!existsSync(absolute)) return;
+
+  for (const rawLine of readFileSync(absolute, "utf8").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+
+    const separator = line.indexOf("=");
+    if (separator < 1) continue;
+
+    const key = line.slice(0, separator).trim();
+    let value = line.slice(separator + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+
+    if (process.env[key] === undefined) process.env[key] = value;
+  }
+}
+
+loadDotEnv();
+
+function integerEnv(name: string, fallback: number): number {
+  const parsed = Number.parseInt(process.env[name] ?? "", 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+const knownRisks = new Set<RiskLevel>(["safe", "write", "external", "dangerous"]);
+const autoApprove = new Set<RiskLevel>(
+  (process.env.CHERRY_AUTO_APPROVE ?? "safe,write")
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item): item is RiskLevel => knownRisks.has(item as RiskLevel)),
+);
+
+export const config = {
+  llm: {
+    baseUrl: (process.env.CHERRY_LLM_BASE_URL ?? "http://127.0.0.1:8000/v1").replace(/\/$/, ""),
+    apiKey: process.env.CHERRY_LLM_API_KEY ?? "local",
+    model: process.env.CHERRY_LLM_MODEL ?? "qwen3.6-27b",
+  },
+  agent: {
+    maxSteps: integerEnv("CHERRY_MAX_STEPS", 12),
+    autoApprove,
+  },
+  memoryFile: resolve(process.env.CHERRY_MEMORY_FILE ?? ".cherry/memory.json"),
+  workspaceRoot: resolve(process.env.CHERRY_WORKSPACE ?? "workspace"),
+  server: {
+    host: process.env.CHERRY_HOST ?? "0.0.0.0",
+    port: integerEnv("CHERRY_PORT", 8787),
+  },
+} as const;
