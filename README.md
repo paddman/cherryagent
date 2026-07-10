@@ -1,12 +1,12 @@
 # CherryAgent
 
-**Tool-calling-first AI office secretary that can read, think, act, verify, remember, and work across devices.**
+**Tool-calling-first AI office secretary that can read, think, plan, act, verify, remember, schedule work, and operate across devices.**
 
-CherryAgent is designed as an AI secretary for daily office work: email, calendar, Drive files, documents, spreadsheets, reports, approvals, browser tasks, internal systems, notifications, and infrastructure workflows.
+CherryAgent is designed as an AI secretary and office operating agent for daily work: planning, flow management, reminders, email, calendar, Drive files, documents, reports, approvals, notifications, browser tasks, internal systems, and infrastructure workflows.
 
 The core principle is simple:
 
-> **The model should not just answer. It should choose tools, execute work, inspect results, recover from errors, and only claim success after verification.**
+> **The model should not just answer. It should choose tools, execute work, inspect results, recover from errors, schedule follow-ups, and only claim success after verification.**
 
 ## Why TypeScript
 
@@ -29,6 +29,16 @@ Already included:
 - OpenAI-compatible LLM provider for Qwen/vLLM/SGLang/Ollama/OpenAI-compatible endpoints
 - Native tool registry with JSON-schema tool definitions
 - Tool execution loop with result feedback to the model
+- Office planner dashboard
+- Kanban-style flow board with drag-and-drop status changes
+- Today timeline, overdue queue, upcoming work, priorities, tags, dependencies, duration, start time, and deadlines
+- Persistent reminder scheduler
+- One-time, interval, daily, weekdays, weekly, monthly, and 5-field cron schedules
+- Timezone-aware schedules with `Asia/Bangkok` as the default
+- Durable in-app alert inbox
+- Browser notifications in the PWA
+- Snooze controls and reminder enable/disable controls
+- Optional scheduled delivery through Gmail, LINE Messaging API, Slack webhook, and generic webhook
 - Approval inbox for external and dangerous actions
 - Persistent local JSON memory
 - Built-in office task and note tools
@@ -38,13 +48,131 @@ Already included:
 - Google Calendar list/create/update/delete tools
 - Google Drive search/read/create-text/move tools
 - HTTP API
-- Installable PWA chat client
-- Approval drawer with Approve & run / Deny actions
+- Installable responsive PWA
 - Health and tool discovery endpoints
 - Docker support
 - CI type checking and build
 
-## Tool packs
+## Planner dashboard
+
+The PWA now has four primary work surfaces:
+
+1. **Dashboard** — today, overdue work, active work, waiting work, active reminders, unread alerts, quick planning, and timeline.
+2. **Flow board** — drag work across `inbox`, `planned`, `doing`, `waiting`, and `done`.
+3. **Reminder center** — create recurring schedules, inspect next runs, pause/resume schedules, read alerts, and snooze notifications.
+4. **Ask Cherry** — use natural language and tool calling to create plans, move work, schedule reminders, inspect office data, and execute multi-step tasks.
+
+### Flow states
+
+```text
+inbox -> planned -> doing -> waiting -> done
+             ^          |
+             +----------+
+```
+
+- `inbox` — captured but not yet triaged
+- `planned` — committed work
+- `doing` — actively in progress
+- `waiting` — blocked or delegated
+- `done` — complete
+- `cancelled` — no longer active
+
+Planner items can also carry:
+
+- priority: `low`, `normal`, `high`, `urgent`
+- start time
+- due time
+- duration
+- timezone
+- tags
+- flow/project ID
+- dependencies with cycle protection
+
+## Reminder scheduler
+
+Supported schedule kinds:
+
+| Kind | Example |
+|---|---|
+| `once` | Run once at a specific ISO 8601 time |
+| `interval` | Every 30 minutes |
+| `daily` | Every day at 09:00 |
+| `weekdays` | Monday-Friday at 08:30 |
+| `weekly` | Monday, Wednesday, Friday at 17:00 |
+| `monthly` | Day 1 of every month at 09:00 |
+| `cron` | `0 9 * * 1-5` |
+
+The scheduler runs inside the server process and checks due reminders every 15 seconds by default. Change it with:
+
+```env
+CHERRY_SCHEDULER_INTERVAL_MS=15000
+```
+
+Planner data persists by default at:
+
+```env
+CHERRY_PLANNER_FILE=.cherry/planner.json
+```
+
+## Notification channels
+
+### Built in without extra server configuration
+
+- `in_app` — durable alert inbox in the planner dashboard
+- `browser` — PWA browser notifications after the user grants permission
+
+### Optional server-side delivery
+
+- `email` — Gmail through the configured Google Workspace connector
+- `line` — LINE Messaging API push
+- `slack` — Slack incoming webhook
+- `webhook` — generic JSON webhook receiving `planner.alert` events
+
+Configure optional channels:
+
+```env
+CHERRY_NOTIFY_EMAIL_TO=
+CHERRY_NOTIFY_SLACK_WEBHOOK=
+CHERRY_NOTIFY_WEBHOOK_URL=
+CHERRY_NOTIFY_LINE_CHANNEL_ACCESS_TOKEN=
+CHERRY_NOTIFY_LINE_TO=
+```
+
+For agent tool calls, in-app/browser reminders use a normal `write` tool. A schedule that can later send email, LINE, Slack, or webhook notifications uses an `external` tool and enters the approval inbox before creation.
+
+## Planner tool pack
+
+- `planner_get_dashboard`
+- `planner_create_item`
+- `planner_list_items`
+- `planner_update_item_status`
+- `planner_add_dependency`
+- `planner_create_reminder`
+- `planner_create_external_reminder`
+- `planner_list_reminders`
+- `planner_set_reminder_enabled`
+- `planner_snooze_alert`
+- `planner_mark_alert_read`
+
+Example natural-language requests:
+
+```text
+Plan my weekly IDC report for Friday at 15:00, make it high priority, and remind me 2 hours before.
+```
+
+```text
+Every weekday at 08:30 remind me to review incidents and overdue tasks.
+```
+
+```text
+Create a monthly reminder on day 1 at 09:00 and notify me through LINE.
+```
+
+```text
+Show my dashboard, find overdue work, and move the most urgent task into Doing.
+```
+
+## Office and Google Workspace tool packs
 
 ### Gmail
 
@@ -79,20 +207,24 @@ User / PWA / Native App / API / LINE / Slack / Teams
                          v
                  +----------------+
                  |  Cherry Agent  |
-                 |  Plan -> Tool  |
-                 |  -> Observe    |
-                 |  -> Verify     |
+                 | Plan -> Tool   |
+                 | -> Observe     |
+                 | -> Verify      |
                  +-------+--------+
                          |
-             +-----------+-----------+
-             |           |           |
-             v           v           v
-          Memory      Approval     Tool Registry
-                         |              |
-                         v              v
-                  Approval Inbox   Office / Files /
-                  Approve & run    Gmail / Calendar /
-                                   Drive / Browser
+        +----------------+----------------+
+        |                |                |
+        v                v                v
+     Planner          Approval         Tool Registry
+        |                |                |
+        v                v                v
+ Flow / Timeline    Approval Inbox   Office / Files /
+ Reminders / Alerts  Approve & run   Gmail / Calendar /
+ Scheduler / Snooze                  Drive / Planner
+        |
+        v
+ Notification Dispatcher
+ in-app / browser / email / LINE / Slack / webhook
 ```
 
 ## Quick start
@@ -100,12 +232,6 @@ User / PWA / Native App / API / LINE / Slack / Teams
 ```bash
 cp .env.example .env
 npm install
-npm run dev
-```
-
-For the HTTP server and PWA:
-
-```bash
 npm run server
 ```
 
@@ -155,7 +281,43 @@ Typical Google OAuth scopes for the current tool pack include Gmail, Calendar, a
 curl http://localhost:8787/health
 ```
 
-The response includes model, tool count, connector status, and pending approval count.
+The response includes model, tool count, connector status, scheduler state, active reminder count, unread alert count, and pending approval count.
+
+### Planner dashboard
+
+```bash
+curl http://localhost:8787/planner/dashboard
+```
+
+### Create a plan item
+
+```bash
+curl -X POST http://localhost:8787/planner/items \
+  -H 'content-type: application/json' \
+  -d '{"title":"Prepare weekly IDC report","priority":"high","status":"planned","dueAt":"2026-07-10T15:00:00+07:00"}'
+```
+
+### Create a recurring reminder
+
+```bash
+curl -X POST http://localhost:8787/planner/reminders \
+  -H 'content-type: application/json' \
+  -d '{"title":"Morning incident review","schedule":{"kind":"weekdays","time":"08:30","timezone":"Asia/Bangkok"},"channels":["in_app","browser"]}'
+```
+
+### Read alerts
+
+```bash
+curl 'http://localhost:8787/planner/alerts?unread=true'
+```
+
+### Snooze an alert
+
+```bash
+curl -X POST http://localhost:8787/planner/alerts/ALERT_ID/snooze \
+  -H 'content-type: application/json' \
+  -d '{"minutes":60}'
+```
 
 ### List tools
 
@@ -186,7 +348,7 @@ curl -X POST http://localhost:8787/approvals/APPROVAL_ID/deny
 ```bash
 curl -X POST http://localhost:8787/chat \
   -H 'content-type: application/json' \
-  -d '{"message":"Find unread important email from this week and summarize what needs my attention"}'
+  -d '{"message":"Plan my weekly report for Friday afternoon and remind me two hours before"}'
 ```
 
 ## Approval lifecycle
@@ -227,7 +389,14 @@ Tools have risk levels:
 - `external` — sends, posts, or changes an external service
 - `dangerous` — destructive or high-impact action
 
-By default, `external` and `dangerous` tools require approval. This keeps the agent useful without letting it silently send mail, delete calendar events, move Drive files, pay money, or change production systems.
+By default, `external` and `dangerous` tools require approval. This keeps the agent useful without letting it silently send mail, create external notification schedules, delete calendar events, move Drive files, pay money, or change production systems.
+
+## Current limitations
+
+- Browser notifications are surfaced by connected PWA clients; a full Web Push subscription service for notifications while every client is completely disconnected is not implemented yet.
+- Server-side email, LINE, Slack, and webhook delivery requires the corresponding environment configuration.
+- The current planner store is local JSON, suitable for a single-node MVP. Multi-user production deployment should move planner state, locking, audit logs, and queues to PostgreSQL/Redis.
+- Notification delivery results are logged by the runtime but are not yet persisted as a per-channel delivery history on each alert.
 
 ## Product direction
 
@@ -239,7 +408,7 @@ Priority tool packs:
 2. Microsoft 365, Teams, Outlook, OneDrive
 3. Browser automation with Playwright
 4. PDF/DOCX/XLSX/PPTX generation and editing
-5. LINE/Slack/Telegram notification and command channels
+5. Web Push and device-specific background notification workers
 6. Meeting capture, transcript, summary, decisions, and follow-up
 7. Daily briefing, overdue-task hunting, proactive work queue
 8. Internal API, database, SSH, Proxmox, VMware, monitoring, ticketing
