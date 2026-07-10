@@ -5,6 +5,7 @@ import type { NotificationChannel, ScheduleSpec } from "../../planner/schedule.j
 const planStatuses: PlanStatus[] = ["inbox", "planned", "doing", "waiting", "done", "cancelled"];
 const priorities: PlanPriority[] = ["low", "normal", "high", "urgent"];
 const notificationChannels: NotificationChannel[] = ["in_app", "browser", "email", "line", "slack", "webhook"];
+const internalChannels = new Set<NotificationChannel>(["in_app", "browser"]);
 
 function requiredString(args: Record<string, unknown>, key: string): string {
   const value = args[key];
@@ -36,13 +37,12 @@ function parsePriority(value: unknown): PlanPriority | undefined {
 function parseChannels(value: unknown): NotificationChannel[] | undefined {
   if (value === undefined) return undefined;
   if (!Array.isArray(value)) throw new Error("channels must be an array");
-  const result = value.map((item) => {
+  return value.map((item) => {
     if (typeof item !== "string" || !notificationChannels.includes(item as NotificationChannel)) {
       throw new Error(`Unknown notification channel: ${String(item)}`);
     }
     return item as NotificationChannel;
   });
-  return result;
 }
 
 function parseSchedule(value: unknown): ScheduleSpec {
@@ -57,11 +57,8 @@ function parseSchedule(value: unknown): ScheduleSpec {
     case "interval": {
       const everyMinutes = Number(schedule.everyMinutes);
       if (!Number.isFinite(everyMinutes)) throw new Error("interval schedule requires everyMinutes");
-      return {
-        kind,
-        everyMinutes,
-        ...(optionalString(schedule, "startAt") ? { startAt: optionalString(schedule, "startAt") } : {}),
-      };
+      const startAt = optionalString(schedule, "startAt");
+      return { kind, everyMinutes, ...(startAt ? { startAt } : {}) };
     }
     case "daily":
       return { kind, time: requiredString(schedule, "time"), ...(timezone ? { timezone } : {}) };
@@ -102,6 +99,30 @@ const scheduleSchema = {
   additionalProperties: false,
 };
 
+const reminderProperties = {
+  itemId: { type: "string" },
+  title: { type: "string" },
+  message: { type: "string" },
+  schedule: scheduleSchema,
+  channels: { type: "array", items: { type: "string", enum: notificationChannels } },
+};
+
+function reminderInput(args: Record<string, unknown>, allowExternal: boolean) {
+  const channels = parseChannels(args.channels);
+  if (!allowExternal && channels?.some((channel) => !internalChannels.has(channel))) {
+    throw new Error("External notification channels require planner_create_external_reminder approval");
+  }
+  const itemId = optionalString(args, "itemId");
+  const message = optionalString(args, "message");
+  return {
+    title: requiredString(args, "title"),
+    schedule: parseSchedule(args.schedule),
+    ...(itemId ? { itemId } : {}),
+    ...(message ? { message } : {}),
+    ...(channels ? { channels } : {}),
+  };
+}
+
 export function createPlannerTools(planner: PlannerStore): AgentTool[] {
   return [
     {
@@ -133,19 +154,30 @@ export function createPlannerTools(planner: PlannerStore): AgentTool[] {
         required: ["title"],
         additionalProperties: false,
       },
-      execute: async (args) => planner.createItem({
-        title: requiredString(args, "title"),
-        ...(optionalString(args, "description") ? { description: optionalString(args, "description") } : {}),
-        ...(parseStatus(args.status) ? { status: parseStatus(args.status) } : {}),
-        ...(parsePriority(args.priority) ? { priority: parsePriority(args.priority) } : {}),
-        ...(optionalString(args, "flowId") ? { flowId: optionalString(args, "flowId") } : {}),
-        ...(stringArray(args.tags) ? { tags: stringArray(args.tags) } : {}),
-        ...(optionalString(args, "startAt") ? { startAt: optionalString(args, "startAt") } : {}),
-        ...(optionalString(args, "dueAt") ? { dueAt: optionalString(args, "dueAt") } : {}),
-        ...(typeof args.durationMinutes === "number" ? { durationMinutes: args.durationMinutes } : {}),
-        ...(optionalString(args, "timezone") ? { timezone: optionalString(args, "timezone") } : {}),
-        ...(stringArray(args.dependsOn) ? { dependsOn: stringArray(args.dependsOn) } : {}),
-      }),
+      execute: async (args) => {
+        const description = optionalString(args, "description");
+        const status = parseStatus(args.status);
+        const priority = parsePriority(args.priority);
+        const flowId = optionalString(args, "flowId");
+        const tags = stringArray(args.tags);
+        const startAt = optionalString(args, "startAt");
+        const dueAt = optionalString(args, "dueAt");
+        const timezone = optionalString(args, "timezone");
+        const dependsOn = stringArray(args.dependsOn);
+        return planner.createItem({
+          title: requiredString(args, "title"),
+          ...(description ? { description } : {}),
+          ...(status ? { status } : {}),
+          ...(priority ? { priority } : {}),
+          ...(flowId ? { flowId } : {}),
+          ...(tags ? { tags } : {}),
+          ...(startAt ? { startAt } : {}),
+          ...(dueAt ? { dueAt } : {}),
+          ...(typeof args.durationMinutes === "number" ? { durationMinutes: args.durationMinutes } : {}),
+          ...(timezone ? { timezone } : {}),
+          ...(dependsOn ? { dependsOn } : {}),
+        });
+      },
     },
     {
       name: "planner_list_items",
@@ -159,10 +191,11 @@ export function createPlannerTools(planner: PlannerStore): AgentTool[] {
         },
         additionalProperties: false,
       },
-      execute: async (args) => planner.listItems({
-        ...(parseStatus(args.status) ? { status: parseStatus(args.status) } : {}),
-        ...(optionalString(args, "flowId") ? { flowId: optionalString(args, "flowId") } : {}),
-      }),
+      execute: async (args) => {
+        const status = parseStatus(args.status);
+        const flowId = optionalString(args, "flowId");
+        return planner.listItems({ ...(status ? { status } : {}), ...(flowId ? { flowId } : {}) });
+      },
     },
     {
       name: "planner_update_item_status",
@@ -200,27 +233,27 @@ export function createPlannerTools(planner: PlannerStore): AgentTool[] {
     },
     {
       name: "planner_create_reminder",
-      description: "Create a persistent reminder schedule. Supports once, interval, daily, weekdays, weekly, monthly, and cron schedules. Prefer in_app/browser channels for normal personal reminders.",
+      description: "Create an in-app/browser reminder schedule. Supports once, interval, daily, weekdays, weekly, monthly, and cron schedules.",
       risk: "write",
       parameters: {
         type: "object",
-        properties: {
-          itemId: { type: "string" },
-          title: { type: "string" },
-          message: { type: "string" },
-          schedule: scheduleSchema,
-          channels: { type: "array", items: { type: "string", enum: notificationChannels } },
-        },
+        properties: reminderProperties,
         required: ["title", "schedule"],
         additionalProperties: false,
       },
-      execute: async (args) => planner.createReminder({
-        title: requiredString(args, "title"),
-        schedule: parseSchedule(args.schedule),
-        ...(optionalString(args, "itemId") ? { itemId: optionalString(args, "itemId") } : {}),
-        ...(optionalString(args, "message") ? { message: optionalString(args, "message") } : {}),
-        ...(parseChannels(args.channels) ? { channels: parseChannels(args.channels) } : {}),
-      }),
+      execute: async (args) => planner.createReminder(reminderInput(args, false)),
+    },
+    {
+      name: "planner_create_external_reminder",
+      description: "Create a reminder that may later deliver through email, LINE, Slack, or webhook. This external side effect requires approval before the schedule is created.",
+      risk: "external",
+      parameters: {
+        type: "object",
+        properties: reminderProperties,
+        required: ["title", "schedule", "channels"],
+        additionalProperties: false,
+      },
+      execute: async (args) => planner.createReminder(reminderInput(args, true)),
     },
     {
       name: "planner_list_reminders",
