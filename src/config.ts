@@ -55,7 +55,7 @@ export const config = {
     model: process.env.CHERRY_LLM_MODEL ?? "qwen3.6-27b",
   },
   agent: {
-    maxSteps: integerEnv("CHERRY_MAX_STEPS", 12),
+    maxSteps: integerEnv("CHERRY_MAX_STEPS", 24),
     autoApprove,
   },
   google: {
