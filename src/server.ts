@@ -3,9 +3,10 @@ import { readFile, stat } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { createRuntime } from "./bootstrap.js";
 import { config } from "./config.js";
+import type { PendingApproval } from "./safety/ApprovalGate.js";
 
 const publicRoot = resolve(process.cwd(), "public");
-const { agent, tools } = await createRuntime();
+const { agent, tools, approvalGate, connectors } = await createRuntime();
 
 const contentTypes: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -73,8 +74,23 @@ async function serveStatic(req: IncomingMessage, res: ServerResponse): Promise<b
   }
 }
 
+function publicApproval(item: PendingApproval): Record<string, unknown> {
+  return {
+    id: item.id,
+    tool: item.tool,
+    risk: item.risk,
+    args: item.args,
+    createdAt: item.createdAt,
+    status: item.status,
+    ...(item.resolvedAt ? { resolvedAt: item.resolvedAt } : {}),
+    ...(item.result !== undefined ? { result: item.result } : {}),
+  };
+}
+
 const server = createServer(async (req, res) => {
   try {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
         "access-control-allow-origin": "*",
@@ -85,18 +101,20 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method === "GET" && req.url === "/health") {
+    if (req.method === "GET" && pathname === "/health") {
       json(res, 200, {
         ok: true,
         name: "CherryAgent",
         model: config.llm.model,
         tools: tools.list().length,
+        connectors,
+        pendingApprovals: approvalGate.list("pending").length,
         time: new Date().toISOString(),
       });
       return;
     }
 
-    if (req.method === "GET" && req.url === "/tools") {
+    if (req.method === "GET" && pathname === "/tools") {
       json(
         res,
         200,
@@ -105,7 +123,38 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method === "POST" && req.url === "/chat") {
+    if (req.method === "GET" && pathname === "/approvals") {
+      json(res, 200, {
+        ok: true,
+        approvals: approvalGate.list("pending").map(publicApproval),
+      });
+      return;
+    }
+
+    const approvalAction = pathname.match(/^\/approvals\/([^/]+)\/(approve|deny)$/);
+    if (req.method === "POST" && approvalAction) {
+      const id = decodeURIComponent(approvalAction[1] ?? "");
+      const action = approvalAction[2];
+
+      if (action === "deny") {
+        const denied = approvalGate.deny(id);
+        json(res, 200, { ok: true, approval: publicApproval(denied) });
+        return;
+      }
+
+      approvalGate.approve(id);
+      const approved = approvalGate.consumeApproved(id);
+      const result = await tools.executeApproved(approved.tool, approved.args, approved.context);
+      const completed = approvalGate.markExecuted(id, { ...result });
+      json(res, result.ok ? 200 : 502, {
+        ok: result.ok,
+        approval: publicApproval(completed),
+        result,
+      });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/chat") {
       const body = await readJson(req);
       const message = typeof body.message === "string" ? body.message.trim() : "";
       if (!message) {
@@ -123,14 +172,14 @@ const server = createServer(async (req, res) => {
     if (await serveStatic(req, res)) return;
     json(res, 404, { ok: false, error: "Not found" });
   } catch (error) {
-    json(res, 500, {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    const message = error instanceof Error ? error.message : String(error);
+    const status = message.startsWith("Unknown approval") || message.includes("cannot be") ? 409 : 500;
+    json(res, status, { ok: false, error: message });
   }
 });
 
 server.listen(config.server.port, config.server.host, () => {
   console.log(`CherryAgent is running at http://${config.server.host}:${config.server.port}`);
   console.log(`Loaded ${tools.list().length} tools for model ${config.llm.model}`);
+  console.log(`Google Workspace configured: ${connectors.google ? "yes" : "no"}`);
 });
