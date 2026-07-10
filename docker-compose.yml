@@ -1,0 +1,11 @@
+services:
+  cherryagent:
+    build: .
+    ports:
+      - "8787:8787"
+    env_file:
+      - .env
+    volumes:
+      - ./workspace:/app/workspace
+      - ./.cherry:/app/.cherry
+    restart: unless-stopped
