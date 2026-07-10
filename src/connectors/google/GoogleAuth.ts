@@ -20,7 +20,7 @@ type TokenResponse = {
 };
 
 export class GoogleAuth {
-  #cachedToken?: CachedToken;
+  #cachedToken: CachedToken | undefined;
 
   constructor(private readonly config: GoogleAuthConfig) {}
 
