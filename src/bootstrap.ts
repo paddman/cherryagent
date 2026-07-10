@@ -5,6 +5,7 @@ import { GoogleAuth } from "./connectors/google/GoogleAuth.js";
 import { GoogleWorkspaceClient } from "./connectors/google/GoogleWorkspaceClient.js";
 import { OpenAICompatibleProvider } from "./llm/OpenAICompatibleProvider.js";
 import { MemoryStore } from "./memory/MemoryStore.js";
+import { NotificationDispatcher } from "./planner/NotificationDispatcher.js";
 import { PlannerStore } from "./planner/PlannerStore.js";
 import { SchedulerEngine } from "./planner/SchedulerEngine.js";
 import { ApprovalGate } from "./safety/ApprovalGate.js";
@@ -15,6 +16,18 @@ import { createOfficeTools } from "./tools/builtin/office.js";
 import { createPlannerTools } from "./tools/builtin/planner.js";
 import { systemTools } from "./tools/builtin/system.js";
 
+export type RuntimeConnectors = {
+  google: boolean;
+  notifications: {
+    inApp: true;
+    browser: true;
+    email: boolean;
+    line: boolean;
+    slack: boolean;
+    webhook: boolean;
+  };
+};
+
 export async function createRuntime(): Promise<{
   agent: CherryAgent;
   tools: ToolRegistry;
@@ -22,7 +35,7 @@ export async function createRuntime(): Promise<{
   planner: PlannerStore;
   scheduler: SchedulerEngine;
   approvalGate: ApprovalGate;
-  connectors: { google: boolean };
+  connectors: RuntimeConnectors;
 }> {
   await mkdir(config.workspaceRoot, { recursive: true });
 
@@ -50,10 +63,22 @@ export async function createRuntime(): Promise<{
     tools.register(tool);
   }
 
+  const dispatcher = new NotificationDispatcher(google, {
+    ...(config.notifications.emailTo ? { emailTo: config.notifications.emailTo } : {}),
+    ...(config.notifications.slackWebhookUrl ? { slackWebhookUrl: config.notifications.slackWebhookUrl } : {}),
+    ...(config.notifications.webhookUrl ? { webhookUrl: config.notifications.webhookUrl } : {}),
+    ...(config.notifications.lineChannelAccessToken ? { lineChannelAccessToken: config.notifications.lineChannelAccessToken } : {}),
+    ...(config.notifications.lineTo ? { lineTo: config.notifications.lineTo } : {}),
+  });
+
   const scheduler = new SchedulerEngine(planner, {
     intervalMs: config.scheduler.intervalMs,
-    onAlert: (alert) => {
-      console.log(`[planner-alert] ${alert.title}: ${alert.message}`);
+    onAlert: async (alert, reminder) => {
+      const results = await dispatcher.dispatch(alert, reminder);
+      for (const result of results) {
+        const state = result.ok ? "ok" : result.skipped ? "skipped" : "failed";
+        console.log(`[planner-alert:${result.channel}:${state}] ${alert.title} · ${result.detail}`);
+      }
     },
   });
   scheduler.start();
@@ -71,6 +96,16 @@ export async function createRuntime(): Promise<{
     planner,
     scheduler,
     approvalGate,
-    connectors: { google: google.isConfigured() },
+    connectors: {
+      google: google.isConfigured(),
+      notifications: {
+        inApp: true,
+        browser: true,
+        email: google.isConfigured() && Boolean(config.notifications.emailTo),
+        line: Boolean(config.notifications.lineChannelAccessToken && config.notifications.lineTo),
+        slack: Boolean(config.notifications.slackWebhookUrl),
+        webhook: Boolean(config.notifications.webhookUrl),
+      },
+    },
   };
 }
