@@ -29,6 +29,7 @@ export class OpenAICompatibleProvider implements LlmProvider {
   constructor(private readonly options: OpenAICompatibleProviderOptions) {}
 
   async complete(request: CompletionRequest): Promise<CompletionResult> {
+    const hasTools = request.tools.length > 0;
     const response = await fetch(`${this.options.baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -38,8 +39,7 @@ export class OpenAICompatibleProvider implements LlmProvider {
       body: JSON.stringify({
         model: this.options.model,
         messages: request.messages,
-        tools: request.tools,
-        tool_choice: "auto",
+        ...(hasTools ? { tools: request.tools, tool_choice: "auto" } : {}),
         temperature: 0.2,
       }),
     });
