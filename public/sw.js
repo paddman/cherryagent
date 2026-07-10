@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cherryagent-shell-v1';
+const CACHE_NAME = 'cherryagent-shell-v2';
 const APP_SHELL = ['/', '/index.html', '/app.js', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -20,7 +20,11 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
-  if (url.pathname === '/health' || url.pathname === '/tools') {
+  if (
+    url.pathname === '/health' ||
+    url.pathname === '/tools' ||
+    url.pathname === '/approvals'
+  ) {
     event.respondWith(fetch(request));
     return;
   }
