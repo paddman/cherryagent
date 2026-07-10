@@ -1,0 +1,22 @@
+{
+  "name": "cherryagent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Tool-calling-first AI office secretary for every device",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "server": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}
