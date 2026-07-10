@@ -56,6 +56,7 @@ export const config = {
   },
   agent: {
     maxSteps: integerEnv("CHERRY_MAX_STEPS", 24),
+    correctnessMaxPasses: Math.min(5, Math.max(1, integerEnv("CHERRY_CORRECTNESS_MAX_PASSES", 3))),
     autoApprove,
   },
   google: {
