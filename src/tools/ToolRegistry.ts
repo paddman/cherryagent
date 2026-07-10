@@ -7,6 +7,7 @@ export type ToolExecutionResult = {
   output?: unknown;
   error?: string;
   blocked?: boolean;
+  approvalId?: string;
 };
 
 export class ToolRegistry {
@@ -53,17 +54,38 @@ export class ToolRegistry {
         ok: false,
         tool: name,
         blocked: true,
+        ...(approval.approvalId ? { approvalId: approval.approvalId } : {}),
         error: approval.reason ?? `Tool ${name} requires approval`,
       };
     }
 
+    return this.executeTool(tool, args, context);
+  }
+
+  async executeApproved(
+    name: string,
+    args: Record<string, unknown>,
+    context: ToolContext,
+  ): Promise<ToolExecutionResult> {
+    const tool = this.#tools.get(name);
+    if (!tool) {
+      return { ok: false, tool: name, error: `Unknown tool: ${name}` };
+    }
+    return this.executeTool(tool, args, context);
+  }
+
+  private async executeTool(
+    tool: AgentTool,
+    args: Record<string, unknown>,
+    context: ToolContext,
+  ): Promise<ToolExecutionResult> {
     try {
       const output = await tool.execute(args, context);
-      return { ok: true, tool: name, output };
+      return { ok: true, tool: tool.name, output };
     } catch (error) {
       return {
         ok: false,
-        tool: name,
+        tool: tool.name,
         error: error instanceof Error ? error.message : String(error),
       };
     }
