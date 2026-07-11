@@ -14,5 +14,18 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - run: npm run typecheck
+      - name: Run typecheck and capture log
+        shell: bash
+        run: |
+          set +e
+          npm run typecheck 2>&1 | tee typecheck.log
+          code=${PIPESTATUS[0]}
+          echo "TYPECHECK_EXIT=$code" >> "$GITHUB_ENV"
+          exit 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agentic-typecheck-log
+          path: typecheck.log
+      - name: Fail when typecheck failed
+        run: exit "$TYPECHECK_EXIT"
       - run: npm run build
