@@ -63,6 +63,11 @@ const vsphereBaseUrl = optionalEnv("CHERRY_VSPHERE_BASE_URL");
 const vsphereUsername = optionalEnv("CHERRY_VSPHERE_USERNAME");
 const vspherePassword = optionalEnv("CHERRY_VSPHERE_PASSWORD");
 
+const postgresUrl = optionalEnv("CHERRY_DB_POSTGRES_URL");
+const mysqlUrl = optionalEnv("CHERRY_DB_MYSQL_URL");
+const sqlitePath = optionalEnv("CHERRY_DB_SQLITE_PATH");
+const redisUrl = optionalEnv("CHERRY_DB_REDIS_URL");
+
 export const config = {
   llm: {
     baseUrl: (process.env.CHERRY_LLM_BASE_URL ?? "http://127.0.0.1:8000/v1").replace(/\/$/, ""),
@@ -73,6 +78,13 @@ export const config = {
     maxSteps: integerEnv("CHERRY_MAX_STEPS", 24),
     correctnessMaxPasses: Math.min(5, Math.max(1, integerEnv("CHERRY_CORRECTNESS_MAX_PASSES", 3))),
     autoApprove,
+  },
+  agentic: {
+    file: resolve(process.env.CHERRY_AGENTIC_FILE ?? ".cherry/agentic.json"),
+    maxTasks: Math.min(20, Math.max(1, integerEnv("CHERRY_AGENTIC_MAX_TASKS", 8))),
+    maxRounds: Math.min(5, Math.max(1, integerEnv("CHERRY_AGENTIC_MAX_ROUNDS", 2))),
+    concurrency: Math.min(8, Math.max(1, integerEnv("CHERRY_AGENTIC_CONCURRENCY", 3))),
+    subAgentMaxSteps: Math.min(30, Math.max(1, integerEnv("CHERRY_SUBAGENT_MAX_STEPS", 10))),
   },
   google: {
     accessToken: googleAccessToken,
@@ -100,6 +112,14 @@ export const config = {
       rejectUnauthorized: booleanEnv("CHERRY_VSPHERE_VERIFY_TLS", true),
       configured: Boolean(vsphereBaseUrl && vsphereUsername && vspherePassword),
     },
+  },
+  database: {
+    timeoutMs: Math.max(1_000, integerEnv("CHERRY_DB_TIMEOUT_MS", 30_000)),
+    maxOutputBytes: Math.max(4_096, integerEnv("CHERRY_DB_MAX_OUTPUT_BYTES", 1_000_000)),
+    postgresUrl,
+    mysqlUrl,
+    sqlitePath,
+    redisUrl,
   },
   markets: {
     timeoutMs: Math.max(1_000, integerEnv("CHERRY_MARKET_TIMEOUT_MS", 20_000)),
