@@ -60,6 +60,11 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          cache-targets: true
+
       - name: Rust check
         working-directory: src-tauri
         shell: pwsh
@@ -76,7 +81,18 @@ jobs:
           path: src-tauri/rust-check.log
 
       - name: Build MSI and NSIS installer
-        run: npm run desktop:build -- --target x86_64-pc-windows-msvc
+        shell: pwsh
+        run: |
+          npm run desktop:build -- --target x86_64-pc-windows-msvc 2>&1 | Tee-Object -FilePath src-tauri/tauri-build.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload Tauri packaging diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cherryagent-tauri-build-log
+          if-no-files-found: ignore
+          path: src-tauri/tauri-build.log
 
       - name: Upload Windows installers
         uses: actions/upload-artifact@v4
