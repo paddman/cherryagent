@@ -1,6 +1,11 @@
 import { mkdir } from "node:fs/promises";
 import { CherryAgent } from "./agent/CherryAgent.js";
+import { AgentHandoffProtocol } from "./agentic/AgentHandoffProtocol.js";
+import { AgentOrchestrator } from "./agentic/AgentOrchestrator.js";
+import { AgenticStateStore } from "./agentic/AgenticStateStore.js";
+import { SharedEvidenceBus } from "./agentic/SharedEvidenceBus.js";
 import { config } from "./config.js";
+import { DatabaseCliHub } from "./connectors/database/DatabaseCliHub.js";
 import { GoogleAuth } from "./connectors/google/GoogleAuth.js";
 import { GoogleWorkspaceClient } from "./connectors/google/GoogleWorkspaceClient.js";
 import { MarketIntelligenceClient } from "./connectors/market/MarketIntelligenceClient.js";
@@ -15,6 +20,8 @@ import { PlannerStore } from "./planner/PlannerStore.js";
 import { SchedulerEngine } from "./planner/SchedulerEngine.js";
 import { ApprovalGate } from "./safety/ApprovalGate.js";
 import { ToolRegistry } from "./tools/ToolRegistry.js";
+import { createAgenticTools } from "./tools/builtin/agentic.js";
+import { createDatabaseTools } from "./tools/builtin/database.js";
 import { createEngineerTools } from "./tools/builtin/engineer.js";
 import { fileTools } from "./tools/builtin/files.js";
 import { createGoogleWorkspaceTools } from "./tools/builtin/googleWorkspace.js";
@@ -29,6 +36,12 @@ export type RuntimeConnectors = {
   infra: {
     proxmox: boolean;
     vsphere: boolean;
+  };
+  database: {
+    postgres: boolean;
+    mysql: boolean;
+    sqlite: boolean;
+    redis: boolean;
   };
   trading: {
     binance: boolean;
@@ -58,6 +71,10 @@ export async function createRuntime(): Promise<{
   memory: MemoryStore;
   planner: PlannerStore;
   engineer: EngineerLoopEngine;
+  agenticStore: AgenticStateStore;
+  evidence: SharedEvidenceBus;
+  handoffs: AgentHandoffProtocol;
+  orchestrator: AgentOrchestrator;
   scheduler: SchedulerEngine;
   approvalGate: ApprovalGate;
   connectors: RuntimeConnectors;
@@ -69,6 +86,9 @@ export async function createRuntime(): Promise<{
   const memory = new MemoryStore(config.memoryFile);
   const planner = new PlannerStore(config.plannerFile);
   const engineer = new EngineerLoopEngine(config.engineerFile);
+  const agenticStore = new AgenticStateStore(config.agentic.file);
+  const evidence = new SharedEvidenceBus(agenticStore);
+  const handoffs = new AgentHandoffProtocol(agenticStore);
 
   const googleAuth = new GoogleAuth({
     ...(config.google.accessToken ? { accessToken: config.google.accessToken } : {}),
@@ -93,6 +113,15 @@ export async function createRuntime(): Promise<{
     password: config.infra.vsphere.password ?? "",
     rejectUnauthorized: config.infra.vsphere.rejectUnauthorized,
     timeoutMs: config.infra.timeoutMs,
+  });
+
+  const database = new DatabaseCliHub({
+    timeoutMs: config.database.timeoutMs,
+    maxOutputBytes: config.database.maxOutputBytes,
+    ...(config.database.postgresUrl ? { postgresUrl: config.database.postgresUrl } : {}),
+    ...(config.database.mysqlUrl ? { mysqlUrl: config.database.mysqlUrl } : {}),
+    ...(config.database.sqlitePath ? { sqlitePath: config.database.sqlitePath } : {}),
+    ...(config.database.redisUrl ? { redisUrl: config.database.redisUrl } : {}),
   });
 
   const market = new MarketIntelligenceClient({
@@ -128,9 +157,22 @@ export async function createRuntime(): Promise<{
     ...createPlannerTools(planner),
     ...createEngineerTools(engineer),
     ...createInfraTools(proxmox, vsphere),
+    ...createDatabaseTools(database),
     ...createMarketTools(exchanges, market),
     ...createGoogleWorkspaceTools(google),
   ]) {
+    tools.register(tool);
+  }
+
+  const provider = new OpenAICompatibleProvider(config.llm);
+  const orchestrator = new AgentOrchestrator(provider, agenticStore, evidence, handoffs, tools, {
+    maxTasks: config.agentic.maxTasks,
+    maxRounds: config.agentic.maxRounds,
+    concurrency: config.agentic.concurrency,
+    subAgentMaxSteps: config.agentic.subAgentMaxSteps,
+  });
+
+  for (const tool of createAgenticTools({ orchestrator, store: agenticStore, evidence, handoffs })) {
     tools.register(tool);
   }
 
@@ -154,7 +196,6 @@ export async function createRuntime(): Promise<{
   });
   scheduler.start();
 
-  const provider = new OpenAICompatibleProvider(config.llm);
   const agent = new CherryAgent(provider, tools, {
     maxSteps: config.agent.maxSteps,
     correctnessMaxPasses: config.agent.correctnessMaxPasses,
@@ -167,6 +208,10 @@ export async function createRuntime(): Promise<{
     memory,
     planner,
     engineer,
+    agenticStore,
+    evidence,
+    handoffs,
+    orchestrator,
     scheduler,
     approvalGate,
     connectors: {
@@ -175,6 +220,7 @@ export async function createRuntime(): Promise<{
         proxmox: proxmox.isConfigured(),
         vsphere: vsphere.isConfigured(),
       },
+      database: database.configured(),
       trading: exchanges.configured(),
       markets: {
         stocks: true,
