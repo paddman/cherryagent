@@ -1,0 +1,77 @@
+name: Windows Desktop Agent
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src-tauri/**"
+      - "desktop-ui/**"
+      - "src/connectors/desktop/**"
+      - "src/tools/builtin/desktop.ts"
+      - "src/desktopRuntime.ts"
+      - "package.json"
+      - ".github/workflows/windows-desktop.yml"
+  pull_request:
+    paths:
+      - "src-tauri/**"
+      - "desktop-ui/**"
+      - "src/connectors/desktop/**"
+      - "src/tools/builtin/desktop.ts"
+      - "src/desktopRuntime.ts"
+      - "package.json"
+      - ".github/workflows/windows-desktop.yml"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Node dependencies
+        run: npm install
+
+      - name: Typecheck TypeScript
+        run: npm run typecheck
+
+      - name: Build Cherry backend
+        run: npm run build
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Compile bundled Cherry backend sidecar
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
+          bun build dist/server.js --compile --outfile src-tauri/binaries/cherry-backend-x86_64-pc-windows-msvc.exe
+          if (-not (Test-Path src-tauri/binaries/cherry-backend-x86_64-pc-windows-msvc.exe)) {
+            throw "Cherry backend sidecar was not produced"
+          }
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust check
+        working-directory: src-tauri
+        run: cargo check --target x86_64-pc-windows-msvc
+
+      - name: Build MSI and NSIS installer
+        run: npm run desktop:build -- --target x86_64-pc-windows-msvc
+
+      - name: Upload Windows installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: cherryagent-windows-installers
+          if-no-files-found: error
+          path: |
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe
