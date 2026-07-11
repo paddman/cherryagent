@@ -7,6 +7,10 @@
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — ภาพรวม target architecture ของ CherryAgent
 - [`CORRECTNESS_LOOP.md`](CORRECTNESS_LOOP.md) — independent correctness verification loop
 
+## Finance & Data Platform
+
+- [`FINANCE_BIGDATA_DATABASE_ARCHITECTURE.md`](FINANCE_BIGDATA_DATABASE_ARCHITECTURE.md) — สถาปัตยกรรมฐานข้อมูล Personal Finance + SME Finance แบบ production-scale ครอบคลุม PostgreSQL OLTP/double-entry ledger, ClickHouse OLAP, Redis hot state/cache, Kafka event backbone, MinIO/S3 data lake, multi-tenancy, partitioning, sharding, idempotency, transactional outbox, audit, NCA integration และ mapping ฟังก์ชันกับตารางทีละหมวด
+
 ## Adaptive Intelligence
 
 - [`NCA_MACHINE_CONSCIOUSNESS_ARCHITECTURE.md`](NCA_MACHINE_CONSCIOUSNESS_ARCHITECTURE.md) — รายละเอียด NCA Adaptive System และ Consciousness-Inspired Cognitive Layer แบบแยกหมวด class/function, state model, input/output, event, failure mode, metrics, API, tools, integration, roadmap และ definition of done
