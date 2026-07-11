@@ -14,7 +14,7 @@ export class VsphereClient {
   private readonly baseUrl: string;
   private readonly rejectUnauthorized: boolean;
   private readonly timeoutMs: number;
-  private sessionId?: string;
+  private sessionId: string | undefined;
 
   constructor(private readonly options: VsphereClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, "");
