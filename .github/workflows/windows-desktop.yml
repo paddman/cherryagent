@@ -62,7 +62,18 @@ jobs:
 
       - name: Rust check
         working-directory: src-tauri
-        run: cargo check --target x86_64-pc-windows-msvc
+        shell: pwsh
+        run: |
+          cargo check --target x86_64-pc-windows-msvc 2>&1 | Tee-Object -FilePath rust-check.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload Rust diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cherryagent-rust-check-log
+          if-no-files-found: ignore
+          path: src-tauri/rust-check.log
 
       - name: Build MSI and NSIS installer
         run: npm run desktop:build -- --target x86_64-pc-windows-msvc
