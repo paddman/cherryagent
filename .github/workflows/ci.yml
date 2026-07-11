@@ -14,5 +14,16 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - run: npm run typecheck
+      - name: Run typecheck and capture log
+        id: typecheck
+        continue-on-error: true
+        run: npm run typecheck > typecheck.log 2>&1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: infra-typecheck-log
+          path: typecheck.log
+      - name: Fail if typecheck failed
+        if: steps.typecheck.outcome == 'failure'
+        run: exit 1
       - run: npm run build
