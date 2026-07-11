@@ -3,7 +3,9 @@ import { CherryAgent } from "./agent/CherryAgent.js";
 import { config } from "./config.js";
 import { GoogleAuth } from "./connectors/google/GoogleAuth.js";
 import { GoogleWorkspaceClient } from "./connectors/google/GoogleWorkspaceClient.js";
+import { MarketIntelligenceClient } from "./connectors/market/MarketIntelligenceClient.js";
 import { ProxmoxClient } from "./connectors/proxmox/ProxmoxClient.js";
+import { CryptoExchangeHub } from "./connectors/trading/CryptoExchangeHub.js";
 import { VsphereClient } from "./connectors/vsphere/VsphereClient.js";
 import { EngineerLoopEngine } from "./engineer/EngineerLoopEngine.js";
 import { OpenAICompatibleProvider } from "./llm/OpenAICompatibleProvider.js";
@@ -17,6 +19,7 @@ import { createEngineerTools } from "./tools/builtin/engineer.js";
 import { fileTools } from "./tools/builtin/files.js";
 import { createGoogleWorkspaceTools } from "./tools/builtin/googleWorkspace.js";
 import { createInfraTools } from "./tools/builtin/infra.js";
+import { createMarketTools } from "./tools/builtin/markets.js";
 import { createOfficeTools } from "./tools/builtin/office.js";
 import { createPlannerTools } from "./tools/builtin/planner.js";
 import { systemTools } from "./tools/builtin/system.js";
@@ -26,6 +29,18 @@ export type RuntimeConnectors = {
   infra: {
     proxmox: boolean;
     vsphere: boolean;
+  };
+  trading: {
+    binance: boolean;
+    mexc: boolean;
+    bitkub: boolean;
+    xt: boolean;
+  };
+  markets: {
+    stocks: true;
+    news: true;
+    financials: true;
+    cryptoMarketData: true;
   };
   notifications: {
     inApp: true;
@@ -80,6 +95,32 @@ export async function createRuntime(): Promise<{
     timeoutMs: config.infra.timeoutMs,
   });
 
+  const market = new MarketIntelligenceClient({
+    timeoutMs: config.markets.timeoutMs,
+    newsLanguage: config.markets.newsLanguage,
+    newsCountry: config.markets.newsCountry,
+  });
+
+  const exchanges = new CryptoExchangeHub({
+    timeoutMs: config.markets.timeoutMs,
+    binance: {
+      ...(config.trading.binance.apiKey ? { apiKey: config.trading.binance.apiKey } : {}),
+      ...(config.trading.binance.apiSecret ? { apiSecret: config.trading.binance.apiSecret } : {}),
+    },
+    mexc: {
+      ...(config.trading.mexc.apiKey ? { apiKey: config.trading.mexc.apiKey } : {}),
+      ...(config.trading.mexc.apiSecret ? { apiSecret: config.trading.mexc.apiSecret } : {}),
+    },
+    bitkub: {
+      ...(config.trading.bitkub.apiKey ? { apiKey: config.trading.bitkub.apiKey } : {}),
+      ...(config.trading.bitkub.apiSecret ? { apiSecret: config.trading.bitkub.apiSecret } : {}),
+    },
+    xt: {
+      ...(config.trading.xt.appKey ? { appKey: config.trading.xt.appKey } : {}),
+      ...(config.trading.xt.secretKey ? { secretKey: config.trading.xt.secretKey } : {}),
+    },
+  });
+
   for (const tool of [
     ...systemTools,
     ...fileTools,
@@ -87,6 +128,7 @@ export async function createRuntime(): Promise<{
     ...createPlannerTools(planner),
     ...createEngineerTools(engineer),
     ...createInfraTools(proxmox, vsphere),
+    ...createMarketTools(exchanges, market),
     ...createGoogleWorkspaceTools(google),
   ]) {
     tools.register(tool);
@@ -132,6 +174,13 @@ export async function createRuntime(): Promise<{
       infra: {
         proxmox: proxmox.isConfigured(),
         vsphere: vsphere.isConfigured(),
+      },
+      trading: exchanges.configured(),
+      markets: {
+        stocks: true,
+        news: true,
+        financials: true,
+        cryptoMarketData: true,
       },
       notifications: {
         inApp: true,
