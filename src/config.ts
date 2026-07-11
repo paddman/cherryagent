@@ -35,6 +35,14 @@ function optionalEnv(name: string): string | undefined {
   return value || undefined;
 }
 
+function booleanEnv(name: string, fallback: boolean): boolean {
+  const value = process.env[name]?.trim().toLowerCase();
+  if (value === undefined || value === "") return fallback;
+  if (["1", "true", "yes", "on"].includes(value)) return true;
+  if (["0", "false", "no", "off"].includes(value)) return false;
+  return fallback;
+}
+
 const knownRisks = new Set<RiskLevel>(["safe", "write", "external", "dangerous"]);
 const autoApprove = new Set<RiskLevel>(
   (process.env.CHERRY_AUTO_APPROVE ?? "safe,write")
@@ -47,6 +55,13 @@ const googleAccessToken = optionalEnv("CHERRY_GOOGLE_ACCESS_TOKEN");
 const googleClientId = optionalEnv("CHERRY_GOOGLE_CLIENT_ID");
 const googleClientSecret = optionalEnv("CHERRY_GOOGLE_CLIENT_SECRET");
 const googleRefreshToken = optionalEnv("CHERRY_GOOGLE_REFRESH_TOKEN");
+
+const proxmoxBaseUrl = optionalEnv("CHERRY_PROXMOX_BASE_URL");
+const proxmoxTokenId = optionalEnv("CHERRY_PROXMOX_TOKEN_ID");
+const proxmoxTokenSecret = optionalEnv("CHERRY_PROXMOX_TOKEN_SECRET");
+const vsphereBaseUrl = optionalEnv("CHERRY_VSPHERE_BASE_URL");
+const vsphereUsername = optionalEnv("CHERRY_VSPHERE_USERNAME");
+const vspherePassword = optionalEnv("CHERRY_VSPHERE_PASSWORD");
 
 export const config = {
   llm: {
@@ -68,6 +83,23 @@ export const config = {
     configured: Boolean(
       googleAccessToken || (googleClientId && googleClientSecret && googleRefreshToken),
     ),
+  },
+  infra: {
+    timeoutMs: Math.max(1_000, integerEnv("CHERRY_INFRA_TIMEOUT_MS", 20_000)),
+    proxmox: {
+      baseUrl: proxmoxBaseUrl,
+      tokenId: proxmoxTokenId,
+      tokenSecret: proxmoxTokenSecret,
+      rejectUnauthorized: booleanEnv("CHERRY_PROXMOX_VERIFY_TLS", true),
+      configured: Boolean(proxmoxBaseUrl && proxmoxTokenId && proxmoxTokenSecret),
+    },
+    vsphere: {
+      baseUrl: vsphereBaseUrl,
+      username: vsphereUsername,
+      password: vspherePassword,
+      rejectUnauthorized: booleanEnv("CHERRY_VSPHERE_VERIFY_TLS", true),
+      configured: Boolean(vsphereBaseUrl && vsphereUsername && vspherePassword),
+    },
   },
   notifications: {
     emailTo: optionalEnv("CHERRY_NOTIFY_EMAIL_TO"),
