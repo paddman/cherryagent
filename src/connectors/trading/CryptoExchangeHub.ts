@@ -258,14 +258,27 @@ class BitkubClient implements ExchangeClient {
     })).data;
   }
 
-  async getOrder(input: OrderStatusInput): Promise<unknown> {
-    const symbol = normalizeCryptoSymbol("bitkub", input.symbol);
+  private async getOrderForSide(symbol: string, orderId: string, side: "buy" | "sell"): Promise<unknown> {
     const path = "/api/v3/market/order-info";
-    const query = qs({ sym: symbol, order_id: input.orderId });
+    const query = qs({ sym: symbol, id: orderId, sd: side });
     return (await jsonHttpRequest(new URL(`${this.baseUrl}${path}?${query}`), {
       headers: this.authHeaders("GET", path, query),
       timeoutMs: this.timeoutMs,
     })).data;
+  }
+
+  async getOrder(input: OrderStatusInput): Promise<unknown> {
+    const symbol = normalizeCryptoSymbol("bitkub", input.symbol).toLowerCase();
+    const errors: string[] = [];
+    for (const side of ["buy", "sell"] as const) {
+      try {
+        const result = await this.getOrderForSide(symbol, input.orderId, side);
+        return { side, result };
+      } catch (error) {
+        errors.push(`${side}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    throw new Error(`Bitkub order ${input.orderId} was not found for buy or sell side: ${errors.join(" | ")}`);
   }
 }
 
