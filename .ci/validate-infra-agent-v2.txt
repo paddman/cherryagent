@@ -1,0 +1,1 @@
+validate infra agent after strict TypeScript fixes
