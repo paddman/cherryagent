@@ -107,13 +107,13 @@ async function runCli(
       windowsHide: true,
     });
 
-    let stdout = Buffer.alloc(0);
-    let stderr = Buffer.alloc(0);
+    let stdout: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+    let stderr: Buffer<ArrayBufferLike> = Buffer.alloc(0);
     let truncated = false;
     let settled = false;
 
-    const append = (current: Buffer, chunk: Buffer | string): Buffer => {
-      const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    const append = (current: Buffer<ArrayBufferLike>, chunk: Buffer<ArrayBufferLike> | string): Buffer<ArrayBufferLike> => {
+      const incoming: Buffer<ArrayBufferLike> = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       if (current.length >= options.maxOutputBytes) {
         truncated = true;
         return current;
@@ -123,8 +123,8 @@ async function runCli(
       return Buffer.concat([current, incoming.subarray(0, remaining)]);
     };
 
-    child.stdout.on("data", (chunk: Buffer | string) => { stdout = append(stdout, chunk); });
-    child.stderr.on("data", (chunk: Buffer | string) => { stderr = append(stderr, chunk); });
+    child.stdout.on("data", (chunk: Buffer<ArrayBufferLike> | string) => { stdout = append(stdout, chunk); });
+    child.stderr.on("data", (chunk: Buffer<ArrayBufferLike> | string) => { stderr = append(stderr, chunk); });
 
     const timer = setTimeout(() => {
       if (settled) return;
