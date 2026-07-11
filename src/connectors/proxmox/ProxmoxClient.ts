@@ -96,8 +96,8 @@ export class ProxmoxClient {
     type: ProxmoxVmType;
     vmid: number;
     name: string;
-    description?: string;
-    includeMemory?: boolean;
+    description?: string | undefined;
+    includeMemory?: boolean | undefined;
   }): Promise<{ taskId: unknown }> {
     const taskId = await this.request(`/nodes/${encodeURIComponent(input.node)}/${input.type}/${input.vmid}/snapshot`, {
       method: "POST",
@@ -115,7 +115,7 @@ export class ProxmoxClient {
     type: ProxmoxVmType;
     vmid: number;
     target: string;
-    online?: boolean;
+    online?: boolean | undefined;
   }): Promise<{ taskId: unknown }> {
     const taskId = await this.request(`/nodes/${encodeURIComponent(input.node)}/${input.type}/${input.vmid}/migrate`, {
       method: "POST",
