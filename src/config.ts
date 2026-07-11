@@ -101,6 +101,29 @@ export const config = {
       configured: Boolean(vsphereBaseUrl && vsphereUsername && vspherePassword),
     },
   },
+  markets: {
+    timeoutMs: Math.max(1_000, integerEnv("CHERRY_MARKET_TIMEOUT_MS", 20_000)),
+    newsLanguage: optionalEnv("CHERRY_MARKET_NEWS_LANGUAGE") ?? "th",
+    newsCountry: optionalEnv("CHERRY_MARKET_NEWS_COUNTRY") ?? "TH",
+  },
+  trading: {
+    binance: {
+      apiKey: optionalEnv("CHERRY_BINANCE_API_KEY"),
+      apiSecret: optionalEnv("CHERRY_BINANCE_API_SECRET"),
+    },
+    mexc: {
+      apiKey: optionalEnv("CHERRY_MEXC_API_KEY"),
+      apiSecret: optionalEnv("CHERRY_MEXC_API_SECRET"),
+    },
+    bitkub: {
+      apiKey: optionalEnv("CHERRY_BITKUB_API_KEY"),
+      apiSecret: optionalEnv("CHERRY_BITKUB_API_SECRET"),
+    },
+    xt: {
+      appKey: optionalEnv("CHERRY_XT_APP_KEY"),
+      secretKey: optionalEnv("CHERRY_XT_SECRET_KEY"),
+    },
+  },
   notifications: {
     emailTo: optionalEnv("CHERRY_NOTIFY_EMAIL_TO"),
     slackWebhookUrl: optionalEnv("CHERRY_NOTIFY_SLACK_WEBHOOK"),
