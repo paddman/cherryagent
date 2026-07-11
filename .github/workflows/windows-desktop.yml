@@ -83,6 +83,11 @@ jobs:
       - name: Build MSI and NSIS installer
         shell: pwsh
         run: |
+          $iconB64 = (Get-Content src-tauri/icons/icon.ico.b64 -Raw).Trim()
+          [IO.File]::WriteAllBytes(
+            "src-tauri/icons/icon.ico",
+            [Convert]::FromBase64String($iconB64)
+          )
           npm run desktop:build -- --target x86_64-pc-windows-msvc 2>&1 | Tee-Object -FilePath src-tauri/tauri-build.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
