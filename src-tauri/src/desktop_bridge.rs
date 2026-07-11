@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     fs,
-    io::Read,
     path::{Path, PathBuf},
     process::Command,
     thread,
@@ -168,7 +167,7 @@ pub fn start_bridge(config: BridgeConfig) -> Result<(), String> {
 
 fn handle_request(mut request: Request, token: &str) {
     if !authorized(&request, token) {
-        respond(&mut request, 401, json!({ "ok": false, "error": "Unauthorized" }));
+        respond(request, 401, json!({ "ok": false, "error": "Unauthorized" }));
         return;
     }
 
@@ -197,8 +196,8 @@ fn handle_request(mut request: Request, token: &str) {
     };
 
     match result {
-        Ok(value) => respond(&mut request, 200, value),
-        Err(error) => respond(&mut request, 400, json!({ "ok": false, "error": error })),
+        Ok(value) => respond(request, 200, value),
+        Err(error) => respond(request, 400, json!({ "ok": false, "error": error })),
     }
 }
 
@@ -221,7 +220,7 @@ fn parse_json<T: for<'de> Deserialize<'de>>(request: &mut Request) -> Result<T, 
     serde_json::from_str(&body).map_err(|error| format!("Invalid JSON body: {error}"))
 }
 
-fn respond(request: &mut Request, status: u16, value: Value) {
+fn respond(request: Request, status: u16, value: Value) {
     let content_type = Header::from_bytes(&b"content-type"[..], &b"application/json; charset=utf-8"[..])
         .expect("valid static content-type header");
     let response = Response::from_string(value.to_string())
@@ -238,7 +237,7 @@ fn list_monitors() -> Result<Vec<MonitorInfo>, String> {
         .map(|(index, monitor)| {
             Ok(MonitorInfo {
                 index,
-                name: monitor.friendly_name().unwrap_or_else(|_| format!("Monitor {index}")),
+                name: format!("Monitor {index}"),
                 is_primary: monitor.is_primary().unwrap_or(false),
                 width: monitor.width().map_err(|error| error.to_string())?,
                 height: monitor.height().map_err(|error| error.to_string())?,
