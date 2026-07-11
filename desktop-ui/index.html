@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CherryAgent</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">WINDOWS DESKTOP AGENT</p>
+        <h1>CherryAgent</h1>
+        <p class="subtitle">ผู้ช่วย AI บน PC ที่มองหน้าจอ ขยับ mouse/keyboard ฟังเสียง พูด และใช้ Agentic Core ได้</p>
+      </div>
+      <button id="quitBtn" class="ghost">ออกจากโปรแกรม</button>
+    </header>
+
+    <section class="status-grid">
+      <article class="status-card"><span>Backend</span><strong id="backendStatus">กำลังตรวจ...</strong></article>
+      <article class="status-card"><span>Desktop Bridge</span><strong id="bridgeStatus">กำลังตรวจ...</strong></article>
+      <article class="status-card"><span>Pending approvals</span><strong id="approvalCount">0</strong></article>
+      <article class="status-card"><span>Config</span><strong id="configPath">กำลังโหลด...</strong></article>
+    </section>
+
+    <section class="workspace">
+      <aside class="sidebar">
+        <h2>Quick actions</h2>
+        <button data-prompt="ดูหน้าจอปัจจุบันด้วย vision แล้วบอกว่ามีอะไรสำคัญ ต้องทำอะไรต่อ และอย่าเดาเกินหลักฐาน">ดูหน้าจอด้วย Vision</button>
+        <button data-prompt="ฟังเสียงฉันหนึ่งครั้งจาก microphone แล้วตอบสิ่งที่ฉันพูด">ฟังเสียงฉัน</button>
+        <button data-prompt="พูดออกลำโพงว่า Cherry พร้อมช่วยงานแล้ว">ทดสอบเสียงพูด</button>
+        <button data-prompt="เช็กสถานะ Windows desktop bridge, monitor และความพร้อมของ mouse keyboard vision speech">ตรวจ Desktop Agent</button>
+
+        <div class="approval-panel">
+          <div class="panel-title">
+            <h2>Approval Inbox</h2>
+            <button id="refreshApprovals" class="small ghost">รีเฟรช</button>
+          </div>
+          <div id="approvals" class="approval-list"></div>
+        </div>
+      </aside>
+
+      <section class="chat-panel">
+        <div id="messages" class="messages">
+          <article class="message assistant">
+            <div class="bubble">Cherry พร้อมแล้ว ลองสั่งงานหลายขั้นตอน เช่น “เปิดหน้าจอ ดูว่ามี error อะไร แล้วช่วยแก้โดยขอ approval ก่อนคลิกหรือพิมพ์”</div>
+          </article>
+        </div>
+        <form id="chatForm" class="composer">
+          <textarea id="messageInput" rows="3" placeholder="สั่ง Cherry ให้ทำงานบน PC..."></textarea>
+          <button id="sendBtn" type="submit">ส่งงาน</button>
+        </form>
+      </section>
+    </section>
+  </main>
+  <script src="./app.js"></script>
+</body>
+</html>
