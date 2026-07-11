@@ -3,6 +3,8 @@ import { CherryAgent } from "./agent/CherryAgent.js";
 import { config } from "./config.js";
 import { GoogleAuth } from "./connectors/google/GoogleAuth.js";
 import { GoogleWorkspaceClient } from "./connectors/google/GoogleWorkspaceClient.js";
+import { ProxmoxClient } from "./connectors/proxmox/ProxmoxClient.js";
+import { VsphereClient } from "./connectors/vsphere/VsphereClient.js";
 import { EngineerLoopEngine } from "./engineer/EngineerLoopEngine.js";
 import { OpenAICompatibleProvider } from "./llm/OpenAICompatibleProvider.js";
 import { MemoryStore } from "./memory/MemoryStore.js";
@@ -14,12 +16,17 @@ import { ToolRegistry } from "./tools/ToolRegistry.js";
 import { createEngineerTools } from "./tools/builtin/engineer.js";
 import { fileTools } from "./tools/builtin/files.js";
 import { createGoogleWorkspaceTools } from "./tools/builtin/googleWorkspace.js";
+import { createInfraTools } from "./tools/builtin/infra.js";
 import { createOfficeTools } from "./tools/builtin/office.js";
 import { createPlannerTools } from "./tools/builtin/planner.js";
 import { systemTools } from "./tools/builtin/system.js";
 
 export type RuntimeConnectors = {
   google: boolean;
+  infra: {
+    proxmox: boolean;
+    vsphere: boolean;
+  };
   notifications: {
     inApp: true;
     browser: true;
@@ -57,12 +64,29 @@ export async function createRuntime(): Promise<{
   });
   const google = new GoogleWorkspaceClient(googleAuth);
 
+  const proxmox = new ProxmoxClient({
+    baseUrl: config.infra.proxmox.baseUrl ?? "",
+    tokenId: config.infra.proxmox.tokenId ?? "",
+    tokenSecret: config.infra.proxmox.tokenSecret ?? "",
+    rejectUnauthorized: config.infra.proxmox.rejectUnauthorized,
+    timeoutMs: config.infra.timeoutMs,
+  });
+
+  const vsphere = new VsphereClient({
+    baseUrl: config.infra.vsphere.baseUrl ?? "",
+    username: config.infra.vsphere.username ?? "",
+    password: config.infra.vsphere.password ?? "",
+    rejectUnauthorized: config.infra.vsphere.rejectUnauthorized,
+    timeoutMs: config.infra.timeoutMs,
+  });
+
   for (const tool of [
     ...systemTools,
     ...fileTools,
     ...createOfficeTools(memory),
     ...createPlannerTools(planner),
     ...createEngineerTools(engineer),
+    ...createInfraTools(proxmox, vsphere),
     ...createGoogleWorkspaceTools(google),
   ]) {
     tools.register(tool);
@@ -105,6 +129,10 @@ export async function createRuntime(): Promise<{
     approvalGate,
     connectors: {
       google: google.isConfigured(),
+      infra: {
+        proxmox: proxmox.isConfigured(),
+        vsphere: vsphere.isConfigured(),
+      },
       notifications: {
         inApp: true,
         browser: true,
