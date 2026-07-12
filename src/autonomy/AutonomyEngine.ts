@@ -41,11 +41,11 @@ export class AutonomyEngine {
   #started = false;
   #running = false;
   #currentDelayMs: number;
-  #lastPulseAt?: string;
-  #nextPulseAt?: string;
-  #lastDecision?: AutonomyDecision;
-  #lastError?: string;
-  #pendingTrigger?: string;
+  #lastPulseAt: string | undefined;
+  #nextPulseAt: string | undefined;
+  #lastDecision: AutonomyDecision | undefined;
+  #lastError: string | undefined;
+  #pendingTrigger: string | undefined;
 
   constructor(private readonly dependencies: {
     observer: WorldObserver;
