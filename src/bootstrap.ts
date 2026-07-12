@@ -4,6 +4,12 @@ import { AgentHandoffProtocol } from "./agentic/AgentHandoffProtocol.js";
 import { AgentOrchestrator } from "./agentic/AgentOrchestrator.js";
 import { AgenticStateStore } from "./agentic/AgenticStateStore.js";
 import { SharedEvidenceBus } from "./agentic/SharedEvidenceBus.js";
+import { AutonomyEngine } from "./autonomy/AutonomyEngine.js";
+import { AutonomyStore } from "./autonomy/AutonomyStore.js";
+import { InitiativePolicy } from "./autonomy/InitiativePolicy.js";
+import { InitiativeReasoner } from "./autonomy/InitiativeReasoner.js";
+import { ProactiveNotifier } from "./autonomy/ProactiveNotifier.js";
+import { WorldObserver } from "./autonomy/WorldObserver.js";
 import { config } from "./config.js";
 import { ConversationStore } from "./conversation/ConversationStore.js";
 import { DatabaseCliHub } from "./connectors/database/DatabaseCliHub.js";
@@ -19,6 +25,7 @@ import { MemoryStore } from "./memory/MemoryStore.js";
 import { NotificationDispatcher } from "./planner/NotificationDispatcher.js";
 import { PlannerStore } from "./planner/PlannerStore.js";
 import { SchedulerEngine } from "./planner/SchedulerEngine.js";
+import type { NotificationChannel } from "./planner/schedule.js";
 import { ApprovalGate } from "./safety/ApprovalGate.js";
 import { ToolRegistry } from "./tools/ToolRegistry.js";
 import { createAgenticTools } from "./tools/builtin/agentic.js";
@@ -66,6 +73,22 @@ export type RuntimeConnectors = {
   };
 };
 
+const supportedNotificationChannels = new Set<NotificationChannel>([
+  "in_app",
+  "browser",
+  "email",
+  "line",
+  "slack",
+  "webhook",
+]);
+
+function autonomyNotificationChannels(values: readonly string[]): NotificationChannel[] {
+  const channels = [...new Set(values.filter((value): value is NotificationChannel =>
+    supportedNotificationChannels.has(value as NotificationChannel),
+  ))];
+  return channels.length ? channels : ["in_app", "browser"];
+}
+
 export async function createRuntime(): Promise<{
   agent: CherryAgent;
   tools: ToolRegistry;
@@ -74,6 +97,8 @@ export async function createRuntime(): Promise<{
   planner: PlannerStore;
   engineer: EngineerLoopEngine;
   agenticStore: AgenticStateStore;
+  autonomyStore: AutonomyStore;
+  autonomy: AutonomyEngine;
   evidence: SharedEvidenceBus;
   handoffs: AgentHandoffProtocol;
   orchestrator: AgentOrchestrator;
@@ -90,6 +115,7 @@ export async function createRuntime(): Promise<{
   const planner = new PlannerStore(config.plannerFile);
   const engineer = new EngineerLoopEngine(config.engineerFile);
   const agenticStore = new AgenticStateStore(config.agentic.file);
+  const autonomyStore = new AutonomyStore(config.autonomy.file);
   const evidence = new SharedEvidenceBus(agenticStore);
   const handoffs = new AgentHandoffProtocol(agenticStore);
 
@@ -187,6 +213,69 @@ export async function createRuntime(): Promise<{
     ...(config.notifications.lineTo ? { lineTo: config.notifications.lineTo } : {}),
   });
 
+  const connectors: RuntimeConnectors = {
+    google: google.isConfigured(),
+    infra: {
+      proxmox: proxmox.isConfigured(),
+      vsphere: vsphere.isConfigured(),
+    },
+    database: database.configured(),
+    trading: exchanges.configured(),
+    markets: {
+      stocks: true,
+      news: true,
+      financials: true,
+      cryptoMarketData: true,
+    },
+    notifications: {
+      inApp: true,
+      browser: true,
+      email: google.isConfigured() && Boolean(config.notifications.emailTo),
+      line: Boolean(config.notifications.lineChannelAccessToken && config.notifications.lineTo),
+      slack: Boolean(config.notifications.slackWebhookUrl),
+      webhook: Boolean(config.notifications.webhookUrl),
+    },
+  };
+
+  const observer = new WorldObserver({
+    conversation,
+    planner,
+    engineer,
+    agenticStore,
+    approvalGate,
+    autonomyStore,
+    connectors: () => connectors,
+  });
+  const reasoner = new InitiativeReasoner(provider);
+  const policy = new InitiativePolicy(autonomyStore, {
+    maxActionsPerHour: config.autonomy.maxActionsPerHour,
+    maxMessagesPerDay: config.autonomy.maxMessagesPerDay,
+    sameTopicCooldownMinutes: config.autonomy.sameTopicCooldownMinutes,
+    quietHoursStart: config.autonomy.quietHoursStart,
+    quietHoursEnd: config.autonomy.quietHoursEnd,
+    timezone: config.autonomy.timezone,
+  });
+  const notifier = new ProactiveNotifier({
+    conversation,
+    dispatcher,
+    channels: autonomyNotificationChannels(config.autonomy.notifyChannels),
+    userId: config.autonomy.userId,
+  });
+  const autonomy = new AutonomyEngine({
+    observer,
+    reasoner,
+    policy,
+    store: autonomyStore,
+    orchestrator,
+    notifier,
+  }, {
+    enabled: config.autonomy.enabled,
+    minIntervalMs: config.autonomy.minIntervalMs,
+    maxIntervalMs: config.autonomy.maxIntervalMs,
+    workspaceRoot: config.workspaceRoot,
+    userId: config.autonomy.userId,
+  });
+
   const scheduler = new SchedulerEngine(planner, {
     intervalMs: config.scheduler.intervalMs,
     onAlert: async (alert, reminder) => {
@@ -195,9 +284,17 @@ export async function createRuntime(): Promise<{
         const state = result.ok ? "ok" : result.skipped ? "skipped" : "failed";
         console.log(`[planner-alert:${result.channel}:${state}] ${alert.title} · ${result.detail}`);
       }
+      await autonomy.ingestEvent({
+        source: "planner",
+        type: "alert",
+        summary: `${alert.title}: ${alert.message}`,
+        severity: "medium",
+        data: { alertId: alert.id, reminderId: alert.reminderId },
+      });
     },
   });
   scheduler.start();
+  autonomy.start();
 
   const agent = new CherryAgent(provider, tools, {
     maxSteps: config.agent.maxSteps,
@@ -213,33 +310,13 @@ export async function createRuntime(): Promise<{
     planner,
     engineer,
     agenticStore,
+    autonomyStore,
+    autonomy,
     evidence,
     handoffs,
     orchestrator,
     scheduler,
     approvalGate,
-    connectors: {
-      google: google.isConfigured(),
-      infra: {
-        proxmox: proxmox.isConfigured(),
-        vsphere: vsphere.isConfigured(),
-      },
-      database: database.configured(),
-      trading: exchanges.configured(),
-      markets: {
-        stocks: true,
-        news: true,
-        financials: true,
-        cryptoMarketData: true,
-      },
-      notifications: {
-        inApp: true,
-        browser: true,
-        email: google.isConfigured() && Boolean(config.notifications.emailTo),
-        line: Boolean(config.notifications.lineChannelAccessToken && config.notifications.lineTo),
-        slack: Boolean(config.notifications.slackWebhookUrl),
-        webhook: Boolean(config.notifications.webhookUrl),
-      },
-    },
+    connectors,
   };
 }
