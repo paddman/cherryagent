@@ -42,6 +42,7 @@ export class OpenAICompatibleProvider implements LlmProvider {
         ...(hasTools ? { tools: request.tools, tool_choice: "auto" } : {}),
         temperature: 0.2,
       }),
+      ...(request.signal ? { signal: request.signal } : {}),
     });
 
     const text = await response.text();
