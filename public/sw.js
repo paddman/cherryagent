@@ -1,5 +1,14 @@
-const CACHE_NAME = 'cherryagent-shell-v3';
-const APP_SHELL = ['/', '/index.html', '/app.js', '/manifest.webmanifest', '/icon.svg'];
+const CACHE_NAME = 'cherryagent-shell-v4';
+const APP_SHELL = [
+  '/',
+  '/index.html',
+  '/app.js',
+  '/cherry.html',
+  '/cherry.css',
+  '/cherry.js',
+  '/manifest.webmanifest',
+  '/icon.svg',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
@@ -24,7 +33,12 @@ self.addEventListener('fetch', (event) => {
     url.pathname === '/health' ||
     url.pathname === '/tools' ||
     url.pathname === '/approvals' ||
-    url.pathname.startsWith('/planner/')
+    url.pathname === '/agent-inbox' ||
+    url.pathname.startsWith('/conversations') ||
+    url.pathname.startsWith('/runs/') ||
+    url.pathname.startsWith('/chat') ||
+    url.pathname.startsWith('/planner/') ||
+    url.pathname.startsWith('/engineer/')
   ) {
     event.respondWith(fetch(request));
     return;
@@ -37,7 +51,7 @@ self.addEventListener('fetch', (event) => {
         caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
         return response;
       })
-      .catch(() => caches.match(request).then((cached) => cached || caches.match('/index.html'))),
+      .catch(() => caches.match(request).then((cached) => cached || caches.match('/cherry.html') || caches.match('/index.html'))),
   );
 });
 
@@ -47,7 +61,7 @@ self.addEventListener('notificationclick', (event) => {
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
       const existing = clients.find((client) => 'focus' in client);
       if (existing) return existing.focus();
-      return self.clients.openWindow('/');
+      return self.clients.openWindow('/cherry.html');
     }),
   );
 });
