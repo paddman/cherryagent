@@ -47,6 +47,7 @@ export type ToolDefinition = {
 export type CompletionRequest = {
   messages: ChatMessage[];
   tools: ToolDefinition[];
+  signal?: AbortSignal;
 };
 
 export type CompletionResult = {
