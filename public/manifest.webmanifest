@@ -1,12 +1,12 @@
 {
-  "name": "CherryAgent — AI Office Secretary",
-  "short_name": "CherryAgent",
-  "description": "Tool-calling-first AI office secretary for every device",
-  "start_url": "/",
+  "name": "Cherry — AI Operating Agent",
+  "short_name": "Cherry",
+  "description": "Chat-first AI operating agent with persistent conversations, live tool progress, approvals, and agent inbox",
+  "start_url": "/cherry.html",
   "scope": "/",
   "display": "standalone",
   "background_color": "#09090b",
-  "theme_color": "#7c3aed",
+  "theme_color": "#09090b",
   "icons": [
     {
       "src": "/icon.svg",
