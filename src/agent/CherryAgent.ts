@@ -16,6 +16,12 @@ export type AgentRunResult = {
   correctness: CorrectnessStatus;
 };
 
+export type AgentRunOptions = {
+  history?: Array<{ role: "user" | "assistant"; content: string }>;
+  signal?: AbortSignal;
+  onTrace?: (event: AgentTraceEvent) => void | Promise<void>;
+};
+
 export type CherryAgentOptions = {
   maxSteps: number;
   correctnessMaxPasses: number;
@@ -110,6 +116,10 @@ function reviewInstruction(review: CorrectnessReview): string {
 Revise the candidate answer or call tools to obtain the missing evidence. Do not mention hidden reasoning or invent evidence.`;
 }
 
+function assertNotAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new Error("Agent run cancelled");
+}
+
 export class CherryAgent {
   private readonly correctnessLoop: CorrectnessLoop;
 
@@ -124,6 +134,7 @@ export class CherryAgent {
   async run(
     userMessage: string,
     identity: { sessionId?: string; userId?: string } = {},
+    runOptions: AgentRunOptions = {},
   ): Promise<AgentRunResult> {
     const context: ToolContext = {
       sessionId: identity.sessionId ?? crypto.randomUUID(),
@@ -131,8 +142,15 @@ export class CherryAgent {
       workspaceRoot: this.options.workspaceRoot,
     };
 
+    const history: ChatMessage[] = (runOptions.history ?? [])
+      .slice(-40)
+      .map((message) => message.role === "user"
+        ? { role: "user", content: message.content }
+        : { role: "assistant", content: message.content });
+
     const messages: ChatMessage[] = [
       { role: "system", content: SYSTEM_PROMPT },
+      ...history,
       { role: "user", content: userMessage },
     ];
     const trace: AgentTraceEvent[] = [];
@@ -140,13 +158,21 @@ export class CherryAgent {
     let revisedAfterReview = false;
     let lastReview: CorrectnessReview | undefined;
 
+    const emit = async (event: AgentTraceEvent): Promise<void> => {
+      trace.push(event);
+      await runOptions.onTrace?.(event);
+    };
+
     for (let step = 1; step <= this.options.maxSteps; step += 1) {
+      assertNotAborted(runOptions.signal);
       const completion = await this.provider.complete({
         messages,
         tools: this.tools.definitions(),
+        ...(runOptions.signal ? { signal: runOptions.signal } : {}),
       });
+      assertNotAborted(runOptions.signal);
       messages.push(completion.message);
-      trace.push({ step, type: "assistant", detail: completion.message });
+      await emit({ step, type: "assistant", detail: completion.message });
 
       const toolCalls = completion.message.tool_calls ?? [];
       if (toolCalls.length === 0) {
@@ -154,6 +180,7 @@ export class CherryAgent {
         correctnessPasses += 1;
 
         try {
+          assertNotAborted(runOptions.signal);
           const review = await this.correctnessLoop.review({
             userMessage,
             candidateAnswer,
@@ -161,7 +188,7 @@ export class CherryAgent {
             pass: correctnessPasses,
           });
           lastReview = review;
-          trace.push({ step, type: "correctness", name: "correctness_verifier", detail: review });
+          await emit({ step, type: "correctness", name: "correctness_verifier", detail: review });
 
           if (review.verdict === "pass") {
             return {
@@ -189,8 +216,9 @@ export class CherryAgent {
           messages.push({ role: "system", content: reviewInstruction(review) });
           continue;
         } catch (error) {
+          if (runOptions.signal?.aborted) throw new Error("Agent run cancelled");
           const verifierError = error instanceof Error ? error.message : String(error);
-          trace.push({ step, type: "error", name: "correctness_verifier", detail: verifierError });
+          await emit({ step, type: "error", name: "correctness_verifier", detail: verifierError });
           return {
             answer: candidateAnswer,
             steps: step,
@@ -205,6 +233,7 @@ export class CherryAgent {
       }
 
       for (const call of toolCalls) {
+        assertNotAborted(runOptions.signal);
         let result: ToolExecutionResult;
         try {
           const args = parseToolArguments(call.function.arguments);
@@ -217,7 +246,7 @@ export class CherryAgent {
           };
         }
 
-        trace.push({
+        await emit({
           step,
           type: result.ok ? "tool" : "error",
           name: call.function.name,
