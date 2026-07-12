@@ -29,6 +29,7 @@ import type { NotificationChannel } from "./planner/schedule.js";
 import { ApprovalGate } from "./safety/ApprovalGate.js";
 import { ToolRegistry } from "./tools/ToolRegistry.js";
 import { createAgenticTools } from "./tools/builtin/agentic.js";
+import { createAutonomyTools } from "./tools/builtin/autonomy.js";
 import { createDatabaseTools } from "./tools/builtin/database.js";
 import { createEngineerTools } from "./tools/builtin/engineer.js";
 import { fileTools } from "./tools/builtin/files.js";
@@ -275,6 +276,10 @@ export async function createRuntime(): Promise<{
     workspaceRoot: config.workspaceRoot,
     userId: config.autonomy.userId,
   });
+
+  for (const tool of createAutonomyTools(autonomy, autonomyStore)) {
+    tools.register(tool);
+  }
 
   const scheduler = new SchedulerEngine(planner, {
     intervalMs: config.scheduler.intervalMs,
