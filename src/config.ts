@@ -154,6 +154,7 @@ export const config = {
   memoryFile: resolve(process.env.CHERRY_MEMORY_FILE ?? ".cherry/memory.json"),
   plannerFile: resolve(process.env.CHERRY_PLANNER_FILE ?? ".cherry/planner.json"),
   engineerFile: resolve(process.env.CHERRY_ENGINEER_FILE ?? ".cherry/engineer.json"),
+  conversationFile: resolve(process.env.CHERRY_CONVERSATION_FILE ?? ".cherry/conversations.json"),
   scheduler: {
     intervalMs: Math.max(1_000, integerEnv("CHERRY_SCHEDULER_INTERVAL_MS", 15_000)),
   },
