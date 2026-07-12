@@ -68,6 +68,12 @@ const mysqlUrl = optionalEnv("CHERRY_DB_MYSQL_URL");
 const sqlitePath = optionalEnv("CHERRY_DB_SQLITE_PATH");
 const redisUrl = optionalEnv("CHERRY_DB_REDIS_URL");
 
+const autonomyMinIntervalMs = Math.max(5_000, integerEnv("CHERRY_AUTONOMY_MIN_INTERVAL_MS", 30_000));
+const autonomyMaxIntervalMs = Math.max(
+  autonomyMinIntervalMs,
+  integerEnv("CHERRY_AUTONOMY_MAX_INTERVAL_MS", 600_000),
+);
+
 export const config = {
   llm: {
     baseUrl: (process.env.CHERRY_LLM_BASE_URL ?? "http://127.0.0.1:8000/v1").replace(/\/$/, ""),
@@ -85,6 +91,23 @@ export const config = {
     maxRounds: Math.min(5, Math.max(1, integerEnv("CHERRY_AGENTIC_MAX_ROUNDS", 2))),
     concurrency: Math.min(8, Math.max(1, integerEnv("CHERRY_AGENTIC_CONCURRENCY", 3))),
     subAgentMaxSteps: Math.min(30, Math.max(1, integerEnv("CHERRY_SUBAGENT_MAX_STEPS", 10))),
+  },
+  autonomy: {
+    enabled: booleanEnv("CHERRY_AUTONOMY_ENABLED", false),
+    file: resolve(process.env.CHERRY_AUTONOMY_FILE ?? ".cherry/autonomy.json"),
+    minIntervalMs: autonomyMinIntervalMs,
+    maxIntervalMs: autonomyMaxIntervalMs,
+    maxActionsPerHour: Math.min(50, Math.max(1, integerEnv("CHERRY_AUTONOMY_MAX_ACTIONS_PER_HOUR", 3))),
+    maxMessagesPerDay: Math.min(100, Math.max(1, integerEnv("CHERRY_AUTONOMY_MAX_MESSAGES_PER_DAY", 5))),
+    sameTopicCooldownMinutes: Math.min(43_200, Math.max(1, integerEnv("CHERRY_AUTONOMY_TOPIC_COOLDOWN_MINUTES", 120))),
+    quietHoursStart: Math.min(23, Math.max(0, integerEnv("CHERRY_AUTONOMY_QUIET_HOURS_START", 0))),
+    quietHoursEnd: Math.min(23, Math.max(0, integerEnv("CHERRY_AUTONOMY_QUIET_HOURS_END", 7))),
+    timezone: optionalEnv("CHERRY_AUTONOMY_TIMEZONE") ?? "Asia/Bangkok",
+    notifyChannels: (process.env.CHERRY_AUTONOMY_NOTIFY_CHANNELS ?? "in_app,browser")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean),
+    userId: optionalEnv("CHERRY_AUTONOMY_USER_ID") ?? "pwa-user",
   },
   google: {
     accessToken: googleAccessToken,
