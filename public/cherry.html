@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#09090b" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Cherry — AI Operating Agent</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/cherry.css" />
+</head>
+<body>
+  <div class="workspace">
+    <aside class="sidebar" id="conversationSidebar">
+      <div class="brand-row">
+        <div class="brand-mark">C</div>
+        <div>
+          <strong>Cherry</strong>
+          <span>AI Operating Agent</span>
+        </div>
+      </div>
+
+      <button class="new-chat" id="newChatButton">＋ New chat</button>
+      <label class="search-box">
+        <span>⌕</span>
+        <input id="conversationSearch" type="search" placeholder="Search conversations" autocomplete="off" />
+      </label>
+
+      <div class="section-label">Conversations</div>
+      <div class="conversation-list" id="conversationList"></div>
+
+      <div class="sidebar-footer">
+        <a href="/">Open operations dashboard</a>
+        <div class="runtime-line"><span class="status-dot" id="statusDot"></span><span id="runtimeStatus">Connecting...</span></div>
+      </div>
+    </aside>
+
+    <main class="chat-pane">
+      <header class="topbar">
+        <button class="icon-button mobile-only" id="openConversationsButton" aria-label="Open conversations">☰</button>
+        <div class="conversation-heading">
+          <strong id="conversationTitle">New conversation</strong>
+          <span id="conversationMeta">Ready</span>
+        </div>
+        <div class="top-actions">
+          <button class="ghost-button" id="installButton" hidden>Install</button>
+          <button class="icon-button" id="openInboxButton" aria-label="Open agent inbox">◎<span class="badge" id="inboxBadge" hidden>0</span></button>
+        </div>
+      </header>
+
+      <section class="messages" id="messages" aria-live="polite">
+        <div class="empty-state" id="emptyState">
+          <div class="cherry-orb">C</div>
+          <h1>มีอะไรให้ Cherry จัดการวันนี้?</h1>
+          <p>คุย วางแผน แก้ incident ตรวจ infra อ่านงาน หรือสั่งให้ Agent ลงมือทำพร้อมหลักฐานได้เลย</p>
+          <div class="quick-prompts">
+            <button data-prompt="เช็กงานที่ค้างและจัดลำดับสิ่งที่ควรทำวันนี้">จัดลำดับงานวันนี้</button>
+            <button data-prompt="ดู Engineer Loop ที่กำลังทำงานหรือถูก block แล้วสรุปให้หน่อย">ดูงาน Agent ที่กำลังรัน</button>
+            <button data-prompt="ตรวจระบบที่เชื่อมต่ออยู่ตอนนี้ แล้วบอกว่ามีอะไรผิดปกติหรือควรเฝ้าระวัง">ตรวจระบบที่เชื่อมต่อ</button>
+          </div>
+        </div>
+      </section>
+
+      <footer class="composer-wrap">
+        <div class="run-strip" id="runStrip" hidden>
+          <div><span class="pulse"></span><span id="runStripText">Cherry is working...</span></div>
+          <button id="stopRunButton">Stop</button>
+        </div>
+        <form class="composer" id="composer">
+          <textarea id="messageInput" rows="1" maxlength="20000" placeholder="Message Cherry..." autocomplete="off"></textarea>
+          <button class="send-button" id="sendButton" aria-label="Send">↑</button>
+        </form>
+        <div class="composer-hint">Enter to send · Shift+Enter for new line · consequential actions still require approval</div>
+      </footer>
+    </main>
+
+    <aside class="inbox-panel" id="inboxPanel">
+      <div class="inbox-head">
+        <div>
+          <strong>Agent Inbox</strong>
+          <span>ตอนนี้ Cherry กำลังทำอะไรอยู่</span>
+        </div>
+        <button class="icon-button" id="closeInboxButton" aria-label="Close inbox">×</button>
+      </div>
+      <div class="inbox-stats" id="inboxStats"></div>
+      <div class="inbox-content" id="inboxContent"></div>
+    </aside>
+  </div>
+
+  <div class="mobile-scrim" id="mobileScrim"></div>
+  <div class="toast-stack" id="toastStack"></div>
+  <script type="module" src="/cherry.js"></script>
+</body>
+</html>
