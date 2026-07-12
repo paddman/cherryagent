@@ -5,6 +5,7 @@ import { AgentOrchestrator } from "./agentic/AgentOrchestrator.js";
 import { AgenticStateStore } from "./agentic/AgenticStateStore.js";
 import { SharedEvidenceBus } from "./agentic/SharedEvidenceBus.js";
 import { config } from "./config.js";
+import { ConversationStore } from "./conversation/ConversationStore.js";
 import { DatabaseCliHub } from "./connectors/database/DatabaseCliHub.js";
 import { GoogleAuth } from "./connectors/google/GoogleAuth.js";
 import { GoogleWorkspaceClient } from "./connectors/google/GoogleWorkspaceClient.js";
@@ -69,6 +70,7 @@ export async function createRuntime(): Promise<{
   agent: CherryAgent;
   tools: ToolRegistry;
   memory: MemoryStore;
+  conversation: ConversationStore;
   planner: PlannerStore;
   engineer: EngineerLoopEngine;
   agenticStore: AgenticStateStore;
@@ -84,6 +86,7 @@ export async function createRuntime(): Promise<{
   const approvalGate = new ApprovalGate(config.agent.autoApprove);
   const tools = new ToolRegistry(approvalGate);
   const memory = new MemoryStore(config.memoryFile);
+  const conversation = new ConversationStore(config.conversationFile);
   const planner = new PlannerStore(config.plannerFile);
   const engineer = new EngineerLoopEngine(config.engineerFile);
   const agenticStore = new AgenticStateStore(config.agentic.file);
@@ -206,6 +209,7 @@ export async function createRuntime(): Promise<{
     agent,
     tools,
     memory,
+    conversation,
     planner,
     engineer,
     agenticStore,
