@@ -3,13 +3,15 @@ import { readFile, stat } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { createRuntime } from "./bootstrap.js";
 import { config } from "./config.js";
+import { ConversationHttpController } from "./conversation/ConversationHttpController.js";
 import type { EngineerLoopStatus, EngineerPhase } from "./engineer/EngineerLoopEngine.js";
 import type { PlanPriority, PlanStatus } from "./planner/PlannerStore.js";
 import type { NotificationChannel, ScheduleSpec } from "./planner/schedule.js";
 import type { PendingApproval } from "./safety/ApprovalGate.js";
 
 const publicRoot = resolve(process.cwd(), "public");
-const { agent, tools, approvalGate, connectors, planner, engineer, scheduler } = await createRuntime();
+const { agent, tools, approvalGate, connectors, conversation, planner, engineer, scheduler } = await createRuntime();
+const conversationHttp = new ConversationHttpController({ agent, conversation, planner, engineer, approvalGate });
 
 const planStatuses: PlanStatus[] = ["inbox", "planned", "doing", "waiting", "done", "cancelled"];
 const priorities: PlanPriority[] = ["low", "normal", "high", "urgent"];
@@ -182,12 +184,14 @@ const server = createServer(async (req, res) => {
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
         "access-control-allow-origin": "*",
-        "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
+        "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
         "access-control-allow-headers": "content-type",
       });
       res.end();
       return;
     }
+
+    if (await conversationHttp.handle(req, res, url)) return;
 
     if (req.method === "GET" && pathname === "/health") {
       const [dashboard, engineerDashboard] = await Promise.all([
@@ -489,7 +493,8 @@ const server = createServer(async (req, res) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const status = message.includes("not found") ? 404 : message.startsWith("Unknown approval") || message.includes("cannot be") ? 409 : 400;
-    json(res, status, { ok: false, error: message });
+    if (!res.headersSent) json(res, status, { ok: false, error: message });
+    else if (!res.writableEnded) res.end();
   }
 });
 
@@ -499,4 +504,5 @@ server.listen(config.server.port, config.server.host, () => {
   console.log(`Google Workspace configured: ${connectors.google ? "yes" : "no"}`);
   console.log(`Planner scheduler interval: ${config.scheduler.intervalMs} ms`);
   console.log(`Engineer Loop Engine state: ${config.engineerFile}`);
+  console.log(`Conversation state: ${config.conversationFile}`);
 });
