@@ -1,5 +1,6 @@
 export { ChannelGateway, type ChannelGatewayOptions } from "./ChannelGateway.js";
 export { getChannelAdapterStatus, type ChannelAdapter } from "./ChannelAdapter.js";
+export { LineAdapter, type LineAdapterConfig } from "./line/LineAdapter.js";
 export type {
   ChannelAdapterStatus,
   ChannelAttachment,
