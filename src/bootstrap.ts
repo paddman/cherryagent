@@ -4,6 +4,8 @@ import { AgentHandoffProtocol } from "./agentic/AgentHandoffProtocol.js";
 import { AgentOrchestrator } from "./agentic/AgentOrchestrator.js";
 import { AgenticStateStore } from "./agentic/AgenticStateStore.js";
 import { SharedEvidenceBus } from "./agentic/SharedEvidenceBus.js";
+import { ChannelGateway } from "./channels/ChannelGateway.js";
+import type { ChannelAdapterStatus } from "./channels/types.js";
 import { config } from "./config.js";
 import { DatabaseCliHub } from "./connectors/database/DatabaseCliHub.js";
 import { GoogleAuth } from "./connectors/google/GoogleAuth.js";
@@ -63,6 +65,7 @@ export type RuntimeConnectors = {
     slack: boolean;
     webhook: boolean;
   };
+  channels: ChannelAdapterStatus[];
 };
 
 export async function createRuntime(): Promise<{
@@ -77,6 +80,7 @@ export async function createRuntime(): Promise<{
   orchestrator: AgentOrchestrator;
   scheduler: SchedulerEngine;
   approvalGate: ApprovalGate;
+  channelGateway: ChannelGateway;
   connectors: RuntimeConnectors;
 }> {
   await mkdir(config.workspaceRoot, { recursive: true });
@@ -202,6 +206,30 @@ export async function createRuntime(): Promise<{
     workspaceRoot: config.workspaceRoot,
   });
 
+  const channelGateway = new ChannelGateway(async (message) => {
+    const attachmentContext = message.attachments?.length
+      ? `\n\nAttachments: ${message.attachments.map((attachment) => attachment.name ?? attachment.type).join(", ")}`
+      : "";
+    const userMessage = `${message.text.trim()}${attachmentContext}`.trim();
+    if (!userMessage) return { suppressReply: true };
+
+    const sessionParts = ["channel", message.channel, message.conversationId];
+    if (message.threadId) sessionParts.push(message.threadId);
+
+    const result = await agent.run(userMessage, {
+      sessionId: sessionParts.join(":"),
+      userId: `${message.channel}:${message.senderId}`,
+    });
+
+    return {
+      text: result.answer,
+      metadata: {
+        steps: result.steps,
+        correctness: result.correctness.status,
+      },
+    };
+  });
+
   return {
     agent,
     tools,
@@ -214,6 +242,7 @@ export async function createRuntime(): Promise<{
     orchestrator,
     scheduler,
     approvalGate,
+    channelGateway,
     connectors: {
       google: google.isConfigured(),
       infra: {
@@ -236,6 +265,7 @@ export async function createRuntime(): Promise<{
         slack: Boolean(config.notifications.slackWebhookUrl),
         webhook: Boolean(config.notifications.webhookUrl),
       },
+      channels: channelGateway.listAdapters(),
     },
   };
 }
