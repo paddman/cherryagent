@@ -68,6 +68,10 @@ const mysqlUrl = optionalEnv("CHERRY_DB_MYSQL_URL");
 const sqlitePath = optionalEnv("CHERRY_DB_SQLITE_PATH");
 const redisUrl = optionalEnv("CHERRY_DB_REDIS_URL");
 
+const lineChannelSecret = optionalEnv("CHERRY_LINE_CHANNEL_SECRET");
+const lineChannelAccessToken = optionalEnv("CHERRY_LINE_CHANNEL_ACCESS_TOKEN")
+  ?? optionalEnv("CHERRY_NOTIFY_LINE_CHANNEL_ACCESS_TOKEN");
+
 export const config = {
   llm: {
     baseUrl: (process.env.CHERRY_LLM_BASE_URL ?? "http://127.0.0.1:8000/v1").replace(/\/$/, ""),
@@ -95,6 +99,13 @@ export const config = {
     configured: Boolean(
       googleAccessToken || (googleClientId && googleClientSecret && googleRefreshToken),
     ),
+  },
+  channels: {
+    line: {
+      channelSecret: lineChannelSecret,
+      channelAccessToken: lineChannelAccessToken,
+      configured: Boolean(lineChannelSecret && lineChannelAccessToken),
+    },
   },
   infra: {
     timeoutMs: Math.max(1_000, integerEnv("CHERRY_INFRA_TIMEOUT_MS", 20_000)),

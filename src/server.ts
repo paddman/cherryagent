@@ -9,7 +9,7 @@ import type { NotificationChannel, ScheduleSpec } from "./planner/schedule.js";
 import type { PendingApproval } from "./safety/ApprovalGate.js";
 
 const publicRoot = resolve(process.cwd(), "public");
-const { agent, tools, approvalGate, connectors, planner, engineer, scheduler } = await createRuntime();
+const { agent, tools, approvalGate, connectors, planner, engineer, scheduler, channelGateway } = await createRuntime();
 
 const planStatuses: PlanStatus[] = ["inbox", "planned", "doing", "waiting", "done", "cancelled"];
 const priorities: PlanPriority[] = ["low", "normal", "high", "urgent"];
@@ -36,7 +36,7 @@ function json(res: ServerResponse, status: number, payload: unknown): void {
   res.end(JSON.stringify(payload));
 }
 
-async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function readRawBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
@@ -45,14 +45,37 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
     if (size > 1_000_000) throw new Error("Request body exceeds 1 MB limit");
     chunks.push(buffer);
   }
+  return Buffer.concat(chunks).toString("utf8");
+}
 
-  const raw = Buffer.concat(chunks).toString("utf8");
+async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+  const raw = await readRawBody(req);
   if (!raw) return {};
   const parsed = JSON.parse(raw) as unknown;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("JSON body must be an object");
   }
   return parsed as Record<string, unknown>;
+}
+
+function requestHeaders(req: IncomingMessage): Record<string, string> {
+  const headers: Record<string, string> = {};
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (typeof value === "string") headers[key.toLowerCase()] = value;
+    else if (Array.isArray(value)) headers[key.toLowerCase()] = value.join(",");
+  }
+  return headers;
+}
+
+function requestQuery(url: URL): Record<string, string | string[]> {
+  const query: Record<string, string | string[]> = {};
+  for (const [key, value] of url.searchParams.entries()) {
+    const existing = query[key];
+    if (existing === undefined) query[key] = value;
+    else if (Array.isArray(existing)) existing.push(value);
+    else query[key] = [existing, value];
+  }
+  return query;
 }
 
 function requiredString(input: Record<string, unknown>, key: string): string {
@@ -183,7 +206,7 @@ const server = createServer(async (req, res) => {
       res.writeHead(204, {
         "access-control-allow-origin": "*",
         "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
-        "access-control-allow-headers": "content-type",
+        "access-control-allow-headers": "content-type,x-line-signature",
       });
       res.end();
       return;
@@ -215,6 +238,20 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "GET" && pathname === "/tools") {
       json(res, 200, tools.list().map(({ name, description, risk, parameters }) => ({ name, description, risk, parameters })));
+      return;
+    }
+
+    const channelWebhookMatch = pathname.match(/^\/channels\/([^/]+)\/webhook$/);
+    if (req.method === "POST" && channelWebhookMatch) {
+      const channelName = decodeURIComponent(channelWebhookMatch[1] ?? "");
+      const rawBody = await readRawBody(req);
+      const result = await channelGateway.handleWebhook(channelName, {
+        method: req.method,
+        headers: requestHeaders(req),
+        rawBody,
+        query: requestQuery(url),
+      });
+      json(res, result.ok ? 200 : 207, result);
       return;
     }
 
@@ -488,7 +525,15 @@ const server = createServer(async (req, res) => {
     json(res, 404, { ok: false, error: "Not found" });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const status = message.includes("not found") ? 404 : message.startsWith("Unknown approval") || message.includes("cannot be") ? 409 : 400;
+    const status = message.includes("not found") || message.startsWith("Unknown channel adapter")
+      ? 404
+      : message.startsWith("Webhook verification failed")
+        ? 401
+        : message.startsWith("Channel adapter is not configured")
+          ? 503
+          : message.startsWith("Unknown approval") || message.includes("cannot be")
+            ? 409
+            : 400;
     json(res, status, { ok: false, error: message });
   }
 });
@@ -497,6 +542,7 @@ server.listen(config.server.port, config.server.host, () => {
   console.log(`CherryAgent is running at http://${config.server.host}:${config.server.port}`);
   console.log(`Loaded ${tools.list().length} tools for model ${config.llm.model}`);
   console.log(`Google Workspace configured: ${connectors.google ? "yes" : "no"}`);
+  console.log(`Channel adapters: ${connectors.channels.map((channel) => `${channel.name}=${channel.configured ? "ready" : "not-configured"}`).join(", ") || "none"}`);
   console.log(`Planner scheduler interval: ${config.scheduler.intervalMs} ms`);
   console.log(`Engineer Loop Engine state: ${config.engineerFile}`);
 });

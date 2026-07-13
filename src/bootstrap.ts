@@ -5,6 +5,7 @@ import { AgentOrchestrator } from "./agentic/AgentOrchestrator.js";
 import { AgenticStateStore } from "./agentic/AgenticStateStore.js";
 import { SharedEvidenceBus } from "./agentic/SharedEvidenceBus.js";
 import { ChannelGateway } from "./channels/ChannelGateway.js";
+import { LineAdapter } from "./channels/line/LineAdapter.js";
 import type { ChannelAdapterStatus } from "./channels/types.js";
 import { config } from "./config.js";
 import { DatabaseCliHub } from "./connectors/database/DatabaseCliHub.js";
@@ -229,6 +230,11 @@ export async function createRuntime(): Promise<{
       },
     };
   });
+
+  channelGateway.register(new LineAdapter({
+    ...(config.channels.line.channelSecret ? { channelSecret: config.channels.line.channelSecret } : {}),
+    ...(config.channels.line.channelAccessToken ? { channelAccessToken: config.channels.line.channelAccessToken } : {}),
+  }));
 
   return {
     agent,
