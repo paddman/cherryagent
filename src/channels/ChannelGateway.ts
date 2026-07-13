@@ -30,6 +30,7 @@ function errorMessage(error: unknown): string {
 export class ChannelGateway {
   private readonly adapters = new Map<string, ChannelAdapter>();
   private readonly seenMessages = new Map<string, number>();
+  private readonly inFlightMessages = new Set<string>();
   private readonly dedupeTtlMs: number;
   private readonly maxSeenMessages: number;
 
@@ -138,9 +139,10 @@ export class ChannelGateway {
     this.pruneSeenMessages();
 
     const dedupeKey = `${channel}:${normalizedMessage.id}`;
-    if (this.seenMessages.has(dedupeKey)) {
+    if (this.seenMessages.has(dedupeKey) || this.inFlightMessages.has(dedupeKey)) {
       return { messageId: normalizedMessage.id, status: "skipped_duplicate" };
     }
+    this.inFlightMessages.add(dedupeKey);
 
     let typingStarted = false;
     try {
@@ -162,6 +164,7 @@ export class ChannelGateway {
         const outbound: OutboundChannelMessage = {
           conversationId: normalizedMessage.conversationId,
           text: handlerResult.text?.trim() ?? "",
+          replyToMessageId: normalizedMessage.id,
           ...(normalizedMessage.threadId ? { threadId: normalizedMessage.threadId } : {}),
           ...(handlerResult.attachments ? { attachments: handlerResult.attachments } : {}),
           ...(handlerResult.metadata ? { metadata: handlerResult.metadata } : {}),
@@ -183,6 +186,7 @@ export class ChannelGateway {
         error: errorMessage(error),
       };
     } finally {
+      this.inFlightMessages.delete(dedupeKey);
       if (typingStarted && adapter.sendTyping) {
         try {
           await adapter.sendTyping(
