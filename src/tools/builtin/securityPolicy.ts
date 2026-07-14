@@ -69,15 +69,21 @@ export function createSecurityPolicyTools(policy: SecurityPolicyEngine, events: 
         required: ["target"],
         additionalProperties: false,
       },
-      execute: async (args) => policy.evaluate({
-        action: "temporary_block",
-        target: requiredString(args, "target"),
-        ...(optionalNumber(args, "timeoutMinutes") !== undefined ? { timeoutMinutes: optionalNumber(args, "timeoutMinutes") } : {}),
-        ...(optionalNumber(args, "confidence") !== undefined ? { confidence: optionalNumber(args, "confidence") } : {}),
-        evidenceCount: optionalInteger(args, "evidenceCount", executionMode(args.mode) === "manual" ? 1 : 0),
-        mode: executionMode(args.mode),
-        ...(optionalString(args, "reason") ? { reason: optionalString(args, "reason") } : {}),
-      }),
+      execute: async (args) => {
+        const timeoutMinutes = optionalNumber(args, "timeoutMinutes");
+        const confidence = optionalNumber(args, "confidence");
+        const reason = optionalString(args, "reason");
+        const mode = executionMode(args.mode);
+        return policy.evaluate({
+          action: "temporary_block",
+          target: requiredString(args, "target"),
+          ...(timeoutMinutes !== undefined ? { timeoutMinutes } : {}),
+          ...(confidence !== undefined ? { confidence } : {}),
+          evidenceCount: optionalInteger(args, "evidenceCount", mode === "manual" ? 1 : 0),
+          mode,
+          ...(reason ? { reason } : {}),
+        });
+      },
     },
     {
       name: "security_db_status",
@@ -107,20 +113,27 @@ export function createSecurityPolicyTools(policy: SecurityPolicyEngine, events: 
         required: ["category"],
         additionalProperties: false,
       },
-      execute: async (args) => events.record({
-        category: requiredString(args, "category"),
-        ...(optionalNumber(args, "severity") !== undefined ? { severity: optionalNumber(args, "severity") } : {}),
-        ...(optionalString(args, "action") ? { action: optionalString(args, "action") } : {}),
-        ...(optionalString(args, "sourceIp") ? { sourceIp: optionalString(args, "sourceIp") } : {}),
-        ...(optionalString(args, "destinationIp") ? { destinationIp: optionalString(args, "destinationIp") } : {}),
-        ...(optionalNumber(args, "confidence") !== undefined ? { confidence: optionalNumber(args, "confidence") } : {}),
-        ...(typeof args.blocked === "boolean" ? { blocked: args.blocked } : {}),
-        evidenceCount: optionalInteger(args, "evidenceCount", 0),
-        tags: stringArray(args.tags),
-        ...(args.payload && typeof args.payload === "object" && !Array.isArray(args.payload)
-          ? { payload: args.payload as Record<string, unknown> }
-          : {}),
-      }),
+      execute: async (args) => {
+        const severity = optionalNumber(args, "severity");
+        const action = optionalString(args, "action");
+        const sourceIp = optionalString(args, "sourceIp");
+        const destinationIp = optionalString(args, "destinationIp");
+        const confidence = optionalNumber(args, "confidence");
+        return await events.record({
+          category: requiredString(args, "category"),
+          ...(severity !== undefined ? { severity } : {}),
+          ...(action ? { action } : {}),
+          ...(sourceIp ? { sourceIp } : {}),
+          ...(destinationIp ? { destinationIp } : {}),
+          ...(confidence !== undefined ? { confidence } : {}),
+          ...(typeof args.blocked === "boolean" ? { blocked: args.blocked } : {}),
+          evidenceCount: optionalInteger(args, "evidenceCount", 0),
+          tags: stringArray(args.tags),
+          ...(args.payload && typeof args.payload === "object" && !Array.isArray(args.payload)
+            ? { payload: args.payload as Record<string, unknown> }
+            : {}),
+        });
+      },
     },
     {
       name: "security_db_recent_events",
