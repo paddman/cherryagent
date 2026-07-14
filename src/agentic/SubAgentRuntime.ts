@@ -1,5 +1,6 @@
 import type { ChatMessage, LlmProvider, ToolContext, ToolDefinition } from "../core/types.js";
 import type { ToolExecutionResult, ToolRegistry } from "../tools/ToolRegistry.js";
+import { getAgentDirectory } from "./AgentDirectory.js";
 import type { AgentRole } from "./AgenticStateStore.js";
 import { SharedEvidenceBus } from "./SharedEvidenceBus.js";
 
@@ -11,6 +12,8 @@ export type SubAgentTraceEvent = {
 };
 
 export type SubAgentResult = {
+  workerId: string;
+  workerName: string;
   role: AgentRole;
   answer: string;
   steps: number;
@@ -64,10 +67,10 @@ function compact(value: unknown, maxChars = 50_000): unknown {
   }
 }
 
-function evidenceClaim(result: ToolExecutionResult): string {
-  if (result.ok) return `${result.tool} completed and returned observable output.`;
-  if (result.blocked) return `${result.tool} was blocked pending approval or policy clearance.`;
-  return `${result.tool} failed: ${result.error ?? "unknown error"}`;
+function evidenceClaim(workerName: string, result: ToolExecutionResult): string {
+  if (result.ok) return `${workerName}: ${result.tool} completed and returned observable output.`;
+  if (result.blocked) return `${workerName}: ${result.tool} was blocked pending approval or policy clearance.`;
+  return `${workerName}: ${result.tool} failed: ${result.error ?? "unknown error"}`;
 }
 
 function roleAllowsTool(role: AgentRole, name: string): boolean {
@@ -93,6 +96,7 @@ export class SubAgentRuntime {
     context: ToolContext;
   }): Promise<SubAgentResult> {
     const role = input.role;
+    const worker = await getAgentDirectory().selectForRole(role);
     const allowedTools = this.tools.list().filter((tool) => roleAllowsTool(role, tool.name));
     const allowedNames = new Set(allowedTools.map((tool) => tool.name));
     const definitions: ToolDefinition[] = allowedTools.map((tool) => ({
@@ -104,10 +108,14 @@ export class SubAgentRuntime {
       },
     }));
 
-    const system = `You are CherryAgent specialist role: ${role}.
-Your specialty: ${ROLE_DESCRIPTIONS[role]}.
-Complete the delegated objective through tools and observable evidence.
+    const system = `You are ${worker.name}, one of Cherry's specialist sub-agents.
+Worker ID: ${worker.id}
+Role: ${role}
+Mission: ${worker.mission}
+Role specialty: ${ROLE_DESCRIPTIONS[role]}.
+${worker.instructions ? `Additional worker instructions: ${worker.instructions}\n` : ""}Complete the delegated objective through tools and observable evidence.
 Rules:
+- You work for Cherry Orchestrator and own the delegated objective until completion, block, or verified failure.
 - Use only the tools provided to you.
 - Read each tool result before choosing the next step.
 - Never claim an action succeeded without supporting tool evidence.
@@ -137,8 +145,10 @@ Rules:
 
       if (!calls.length) {
         return {
+          workerId: worker.id,
+          workerName: worker.name,
           role,
-          answer: completion.message.content?.trim() || "Task completed without a textual result.",
+          answer: `[${worker.name} · ${role}] ${completion.message.content?.trim() || "Task completed without a textual result."}`,
           steps: step,
           trace,
           evidenceIds,
@@ -151,7 +161,7 @@ Rules:
         let result: ToolExecutionResult;
         try {
           if (!allowedNames.has(call.function.name)) {
-            result = { ok: false, tool: call.function.name, error: `Tool is not allowed for ${role} sub-agent` };
+            result = { ok: false, tool: call.function.name, error: `Tool is not allowed for ${worker.name} (${role}) sub-agent` };
           } else {
             const args = parseToolArguments(call.function.arguments);
             result = await this.tools.execute(call.function.name, args, input.context);
@@ -178,8 +188,8 @@ Rules:
           taskId: input.taskId,
           agent: role,
           kind: result.ok ? "tool_result" : result.blocked ? "observation" : "error",
-          claim: evidenceClaim(result),
-          data: compact(result.output ?? result.error),
+          claim: evidenceClaim(worker.name, result),
+          data: compact({ workerId: worker.id, workerName: worker.name, output: result.output ?? result.error }),
           sourceTool: result.tool,
           confidence: result.ok ? 1 : 0.95,
         });
@@ -195,8 +205,10 @@ Rules:
     }
 
     return {
+      workerId: worker.id,
+      workerName: worker.name,
       role,
-      answer: `Stopped after ${this.maxSteps} sub-agent steps before a final answer was produced.`,
+      answer: `[${worker.name} · ${role}] Stopped after ${this.maxSteps} sub-agent steps before a final answer was produced.`,
       steps: this.maxSteps,
       trace,
       evidenceIds,
