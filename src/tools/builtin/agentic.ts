@@ -1,4 +1,5 @@
 import type { AgentTool } from "../../core/types.js";
+import { getAgentDirectory } from "../../agentic/AgentDirectory.js";
 import {
   AgenticStateStore,
   type AgentRole,
@@ -12,6 +13,7 @@ import { SharedEvidenceBus } from "../../agentic/SharedEvidenceBus.js";
 const roles: AgentRole[] = [
   "orchestrator", "office", "planner", "infra", "market", "research", "database", "engineer", "critic", "verifier", "general",
 ];
+const workerRoles = roles.filter((role) => role !== "orchestrator");
 const handoffStatuses: HandoffStatus[] = ["pending", "accepted", "completed", "blocked", "failed", "rejected"];
 const evidenceKinds: EvidenceKind[] = ["observation", "tool_result", "fact", "decision", "error", "verification"];
 
@@ -44,6 +46,12 @@ function parseRole(value: unknown): AgentRole {
   return value as AgentRole;
 }
 
+function parseWorkerRole(value: unknown): AgentRole {
+  const role = parseRole(value);
+  if (role === "orchestrator") throw new Error("Cherry is the orchestrator; workers must use a specialist role");
+  return role;
+}
+
 function parseHandoffStatus(value: unknown): HandoffStatus | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "string" || !handoffStatuses.includes(value as HandoffStatus)) throw new Error(`status must be one of: ${handoffStatuses.join(", ")}`);
@@ -61,10 +69,89 @@ export function createAgenticTools(input: {
   evidence: SharedEvidenceBus;
   handoffs: AgentHandoffProtocol;
 }): AgentTool[] {
+  const directory = getAgentDirectory();
   return [
     {
+      name: "agent_list_workers",
+      description: "List Cherry's named sub-agent roster, including the 10 built-in workers and any custom workers added later.",
+      risk: "safe",
+      parameters: {
+        type: "object",
+        properties: {
+          role: { type: "string", enum: workerRoles },
+          enabledOnly: { type: "boolean" },
+        },
+        additionalProperties: false,
+      },
+      execute: async (args) => {
+        const role = args.role === undefined ? undefined : parseWorkerRole(args.role);
+        return directory.list({
+          ...(role ? { role } : {}),
+          enabledOnly: args.enabledOnly === true,
+        });
+      },
+    },
+    {
+      name: "agent_get_worker",
+      description: "Get one named Cherry sub-agent profile by worker id.",
+      risk: "safe",
+      parameters: {
+        type: "object",
+        properties: { workerId: { type: "string" } },
+        required: ["workerId"],
+        additionalProperties: false,
+      },
+      execute: async (args) => directory.get(requiredString(args, "workerId")),
+    },
+    {
+      name: "agent_add_worker",
+      description: "Add a persistent custom named sub-agent to Cherry's worker roster. The worker inherits tool access from its specialist role and can be selected by the orchestration runtime.",
+      risk: "write",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          name: { type: "string" },
+          role: { type: "string", enum: workerRoles },
+          mission: { type: "string" },
+          instructions: { type: "string" },
+        },
+        required: ["name", "role", "mission"],
+        additionalProperties: false,
+      },
+      execute: async (args) => {
+        const id = optionalString(args, "id");
+        const instructions = optionalString(args, "instructions");
+        return directory.add({
+          name: requiredString(args, "name"),
+          role: parseWorkerRole(args.role),
+          mission: requiredString(args, "mission"),
+          ...(id ? { id } : {}),
+          ...(instructions ? { instructions } : {}),
+        });
+      },
+    },
+    {
+      name: "agent_set_worker_enabled",
+      description: "Enable or disable a custom named sub-agent. Built-in workers remain protected as the default operational roster.",
+      risk: "write",
+      parameters: {
+        type: "object",
+        properties: {
+          workerId: { type: "string" },
+          enabled: { type: "boolean" },
+        },
+        required: ["workerId", "enabled"],
+        additionalProperties: false,
+      },
+      execute: async (args) => {
+        if (typeof args.enabled !== "boolean") throw new Error("enabled must be a boolean");
+        return directory.setEnabled(requiredString(args, "workerId"), args.enabled);
+      },
+    },
+    {
       name: "orchestrator_run_goal",
-      description: "Give Cherry Orchestrator a complex multi-step or multi-domain goal. It decomposes the goal into a dependency graph, delegates to specialist sub-agents, records agent-to-agent handoffs, shares evidence, runs critic repair rounds, synthesizes, and verifies the final answer.",
+      description: "Give Cherry Orchestrator a complex multi-step or multi-domain goal. It decomposes the goal into a dependency graph, delegates to named specialist sub-agents, records agent-to-agent handoffs, shares evidence, runs critic repair rounds, synthesizes, and verifies the final answer.",
       risk: "write",
       parameters: {
         type: "object",
@@ -85,7 +172,7 @@ export function createAgenticTools(input: {
     },
     {
       name: "orchestrator_get_run",
-      description: "Get one persistent agentic run with goal, rounds, dependency tasks, sub-agent results, critique, verification, and final synthesis.",
+      description: "Get one persistent agentic run with goal, rounds, dependency tasks, named sub-agent results, critique, verification, and final synthesis.",
       risk: "safe",
       parameters: {
         type: "object",
