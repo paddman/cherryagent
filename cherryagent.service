@@ -1,0 +1,16 @@
+[Unit]
+Description=CherryAgent Docker Compose
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=adminmc
+WorkingDirectory=/home/adminmc/apps/cherryagent
+ExecStart=/usr/bin/docker compose up -d --build
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

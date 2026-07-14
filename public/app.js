@@ -19,6 +19,7 @@ const viewTitles = {
   reminders: 'Reminder Center',
   engineer: 'Engineer Loop Engine',
   chat: 'Ask Cherry',
+  voice: 'Voice Assistant',
 };
 
 const flowColumns = [
@@ -76,6 +77,7 @@ function switchView(name) {
   $$('.nav-button').forEach((button) => button.classList.toggle('active', button.dataset.view === name));
   $('#viewTitle').textContent = viewTitles[name];
   if (name === 'chat') $('#message').focus();
+  if (name === 'voice') $('#voiceText').focus();
   if (name === 'engineer') void loadEngineer();
 }
 
@@ -86,7 +88,7 @@ async function checkHealth() {
   try {
     const data = await api('/health');
     $('#statusText').textContent = `${data.model} · ${data.tools} tools`;
-    $('#connectorStatus').textContent = `Google Workspace: ${data.connectors?.google ? 'connected' : 'not configured'}`;
+    $('#connectorStatus').textContent = `LLM: ${data.model} · Voice: ${data.connectors?.voice ? 'TTS on' : 'TTS off'} · STT: ${data.connectors?.stt ? 'on' : 'off'}`;
     $('#schedulerStatus').textContent = `Scheduler: ${data.planner?.schedulerRunning ? 'running' : 'stopped'} · ${Math.round((data.planner?.schedulerIntervalMs || 0) / 1000)}s`;
     const activeEngineer = (data.engineer?.running || 0) + (data.engineer?.blocked || 0);
     $('#engineerStatus').textContent = `Engineer Loop: ${data.engineer?.running || 0} running · ${data.engineer?.blocked || 0} blocked`;
@@ -700,6 +702,245 @@ $('#message').addEventListener('keydown', (event) => {
     $('#composer').requestSubmit();
   }
 });
+
+const voiceState = {
+  mediaRecorder: null,
+  chunks: [],
+  busy: false,
+};
+
+function appendVoiceLog(label, text) {
+  const entry = document.createElement('div');
+  entry.className = 'voice-entry';
+  const title = document.createElement('strong');
+  title.textContent = label;
+  const body = document.createElement('div');
+  body.textContent = text;
+  entry.append(title, body);
+  $('#voiceLog').prepend(entry);
+}
+
+async function blobToBase64(blob) {
+  const buffer = await blob.arrayBuffer();
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function audioBufferToWav(audioBuffer) {
+  const channel = audioBuffer.getChannelData(0);
+  const sampleRate = audioBuffer.sampleRate;
+  const bytesPerSample = 2;
+  const dataSize = channel.length * bytesPerSample;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  const writeString = (offset, value) => {
+    for (let i = 0; i < value.length; i += 1) view.setUint8(offset + i, value.charCodeAt(i));
+  };
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * bytesPerSample, true);
+  view.setUint16(32, bytesPerSample, true);
+  view.setUint16(34, 16, true);
+  writeString(36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  let offset = 44;
+  for (let i = 0; i < channel.length; i += 1) {
+    const sample = Math.max(-1, Math.min(1, channel[i] ?? 0));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    offset += 2;
+  }
+  return buffer;
+}
+
+async function convertBlobToWav(blob, targetSampleRate = 24000) {
+  if (blob.type.includes('wav')) return blob;
+  const audioContext = new AudioContext();
+  try {
+    const decoded = await audioContext.decodeAudioData(await blob.arrayBuffer());
+    const frames = Math.max(1, Math.ceil(decoded.duration * targetSampleRate));
+    const offline = new OfflineAudioContext(1, frames, targetSampleRate);
+    const source = offline.createBufferSource();
+    source.buffer = decoded;
+    source.connect(offline.destination);
+    source.start(0);
+    const rendered = await offline.startRendering();
+    return new Blob([audioBufferToWav(rendered)], { type: 'audio/wav' });
+  } finally {
+    await audioContext.close();
+  }
+}
+
+async function sendVoiceRequest(payload) {
+  if (voiceState.busy) return;
+  voiceState.busy = true;
+  $('#voiceStatus').textContent = 'กำลังประมวลผล...';
+  try {
+    const response = await fetch('/voice/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...payload, sessionId, userId: 'voice-user', speak: true }),
+    });
+    const data = await response.json();
+    if (!response.ok || data.ok === false) throw new Error(data.error || `Voice chat failed (${response.status})`);
+    if (data.transcript) appendVoiceLog('คุณ', data.transcript);
+    appendVoiceLog('Cherry', data.answer || '(empty answer)');
+    if (data.audioBase64) {
+      const player = $('#voicePlayer');
+      player.style.display = 'block';
+      player.src = `data:audio/${data.audioFormat || 'wav'};base64,${data.audioBase64}`;
+      await player.play().catch(() => {});
+    }
+    $('#voiceStatus').textContent = `เสร็จแล้ว · ${data.steps || 0} ขั้นตอน`;
+  } catch (error) {
+    $('#voiceStatus').textContent = error instanceof Error ? error.message : String(error);
+    toast($('#voiceStatus').textContent);
+  } finally {
+    voiceState.busy = false;
+  }
+}
+
+async function sendVoiceAudio(blob) {
+  const wavBlob = await convertBlobToWav(blob);
+  await sendVoiceRequest({ audioBase64: await blobToBase64(wavBlob) });
+}
+
+async function sendVoiceText(text) {
+  const message = text.trim();
+  if (!message) return;
+  appendVoiceLog('คุณ', message);
+  await sendVoiceRequest({ text: message });
+}
+
+async function startVoiceRecording() {
+  if (voiceState.busy || voiceState.mediaRecorder) return;
+  if (!window.isSecureContext) {
+    $('#voiceStatus').textContent = 'ต้องเปิดผ่าน HTTPS ถึงจะใช้ไมค์ได้';
+    toast($('#voiceStatus').textContent);
+    return;
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    toast('เบราว์เซอร์ไม่รองรับไมค์');
+    return;
+  }
+
+  $('#voiceStatus').textContent = 'กำลังตรวจหาไมโครโฟน...';
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const mics = devices.filter((device) => device.kind === 'audioinput');
+    if (mics.length === 0) {
+      $('#voiceStatus').textContent = 'ไม่พบไมโครโฟนบนเครื่องนี้ — ใช้ช่องพิมพ์ด้านล่าง แล้วกด 🔊 ได้เลย';
+      toast('ไม่พบไมโครโฟน — พิมพ์แล้วกด 🔊 ได้');
+      $('#voiceText').focus();
+      return;
+    }
+
+    $('#voiceStatus').textContent = 'กำลังเปิดไมโครโฟน...';
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+    voiceState.chunks = [];
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : '';
+    const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+    voiceState.mediaRecorder = recorder;
+    recorder.addEventListener('dataavailable', (event) => {
+      if (event.data.size > 0) voiceState.chunks.push(event.data);
+    });
+    recorder.addEventListener('stop', async () => {
+      stream.getTracks().forEach((track) => track.stop());
+      const blob = new Blob(voiceState.chunks, { type: recorder.mimeType || 'audio/webm' });
+      voiceState.mediaRecorder = null;
+      voiceState.chunks = [];
+      $('#voiceMicButton').classList.remove('recording');
+      $('#voiceMicButton').textContent = '🎤 ใช้ไมโครโฟน';
+      $('#voiceMicButton').disabled = false;
+      if (!blob.size) {
+        $('#voiceStatus').textContent = 'ไม่ได้ยินเสียง — ลองพูดให้นานขึ้นแล้วกดส่งอีกครั้ง';
+        return;
+      }
+      try {
+        await sendVoiceAudio(blob);
+      } catch (error) {
+        $('#voiceStatus').textContent = error instanceof Error ? error.message : String(error);
+        toast($('#voiceStatus').textContent);
+      }
+    }, { once: true });
+    recorder.start(250);
+    $('#voiceMicButton').classList.add('recording');
+    $('#voiceMicButton').textContent = '⏹ กดอีกครั้งเพื่อส่ง';
+    $('#voiceStatus').textContent = 'กำลังฟัง... พูดเสร็จแล้วกดปุ่มอีกครั้ง';
+  } catch (error) {
+    voiceState.mediaRecorder = null;
+    $('#voiceMicButton').classList.remove('recording');
+    $('#voiceMicButton').textContent = '🎤 ใช้ไมโครโฟน';
+    const name = error instanceof DOMException ? error.name : '';
+    const detail = error instanceof Error ? error.message : String(error);
+    let message = `เปิดไมค์ไม่ได้: ${detail}`;
+    if (name === 'NotFoundError' || /Requested device not found/i.test(detail)) {
+      message = 'ไม่พบไมโครโฟนบนเครื่องนี้ — เสียบไมค์/หูฟัง หรือใช้ช่องพิมพ์ด้านล่างแล้วกด 🔊';
+      $('#voiceText').focus();
+    } else if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+      message = 'เบราว์เซอร์บล็อกไมค์ — กดไอคอนไมค์/ล็อกในแถบที่อยู่เว็บ แล้วเลือก Allow';
+    } else if (name === 'NotReadableError') {
+      message = 'ไมค์ถูกโปรแกรมอื่นใช้อยู่ — ปิด Zoom/Teams/Discord แล้วลองใหม่ หรือพิมพ์แล้วกด 🔊';
+    }
+    $('#voiceStatus').textContent = message;
+    toast(message);
+  }
+}
+
+function stopVoiceRecording() {
+  const recorder = voiceState.mediaRecorder;
+  if (!recorder || recorder.state === 'inactive') return;
+  $('#voiceStatus').textContent = 'กำลังส่งเสียง...';
+  $('#voiceMicButton').disabled = true;
+  recorder.stop();
+}
+
+function toggleVoiceRecording() {
+  if (voiceState.busy) return;
+  if (voiceState.mediaRecorder && voiceState.mediaRecorder.state !== 'inactive') {
+    stopVoiceRecording();
+    return;
+  }
+  void startVoiceRecording();
+}
+
+const voiceMicButton = $('#voiceMicButton');
+voiceMicButton.addEventListener('click', (event) => {
+  event.preventDefault();
+  toggleVoiceRecording();
+});
+
+$('#voiceTextForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const text = $('#voiceText').value;
+  $('#voiceText').value = '';
+  await sendVoiceText(text);
+});
+
+if (location.hash === '#voice') switchView('voice');
 
 function friendlyArgs(args) {
   try { return JSON.stringify(args, null, 2); } catch { return String(args); }

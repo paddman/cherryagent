@@ -15,6 +15,8 @@ import { MarketIntelligenceClient } from "./connectors/market/MarketIntelligence
 import { ProxmoxClient } from "./connectors/proxmox/ProxmoxClient.js";
 import { CryptoExchangeHub } from "./connectors/trading/CryptoExchangeHub.js";
 import { VsphereClient } from "./connectors/vsphere/VsphereClient.js";
+import { OmniVoiceClient } from "./connectors/voice/OmniVoiceClient.js";
+import { SttClient } from "./connectors/voice/SttClient.js";
 import { EngineerLoopEngine } from "./engineer/EngineerLoopEngine.js";
 import { OpenAICompatibleProvider } from "./llm/OpenAICompatibleProvider.js";
 import { MemoryStore } from "./memory/MemoryStore.js";
@@ -33,6 +35,7 @@ import { createMarketTools } from "./tools/builtin/markets.js";
 import { createOfficeTools } from "./tools/builtin/office.js";
 import { createPlannerTools } from "./tools/builtin/planner.js";
 import { systemTools } from "./tools/builtin/system.js";
+import { createVoiceTools } from "./tools/builtin/voice.js";
 
 export type RuntimeConnectors = {
   google: boolean;
@@ -67,6 +70,8 @@ export type RuntimeConnectors = {
     webhook: boolean;
   };
   channels: ChannelAdapterStatus[];
+  voice: boolean;
+  stt: boolean;
 };
 
 export async function createRuntime(): Promise<{
@@ -83,6 +88,8 @@ export async function createRuntime(): Promise<{
   approvalGate: ApprovalGate;
   channelGateway: ChannelGateway;
   connectors: RuntimeConnectors;
+  voiceClient: OmniVoiceClient;
+  sttClient: SttClient;
 }> {
   await mkdir(config.workspaceRoot, { recursive: true });
 
@@ -135,6 +142,18 @@ export async function createRuntime(): Promise<{
     newsCountry: config.markets.newsCountry,
   });
 
+  const voice = new OmniVoiceClient({
+    baseUrl: config.voice.baseUrl,
+    timeoutMs: config.voice.timeoutMs,
+    defaultLanguage: config.voice.language,
+    defaultFormat: config.voice.format,
+  });
+
+  const stt = new SttClient({
+    baseUrl: config.stt.baseUrl,
+    timeoutMs: config.stt.timeoutMs,
+  });
+
   const exchanges = new CryptoExchangeHub({
     timeoutMs: config.markets.timeoutMs,
     binance: {
@@ -165,6 +184,7 @@ export async function createRuntime(): Promise<{
     ...createDatabaseTools(database),
     ...createMarketTools(exchanges, market),
     ...createGoogleWorkspaceTools(google),
+    ...createVoiceTools(voice, stt, config.workspaceRoot),
   ]) {
     tools.register(tool);
   }
@@ -272,6 +292,10 @@ export async function createRuntime(): Promise<{
         webhook: Boolean(config.notifications.webhookUrl),
       },
       channels: channelGateway.listAdapters(),
+      voice: voice.isConfigured(),
+      stt: stt.isConfigured(),
     },
+    voiceClient: voice,
+    sttClient: stt,
   };
 }

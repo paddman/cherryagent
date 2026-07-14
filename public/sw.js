@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cherryagent-shell-v3';
+const CACHE_NAME = 'cherryagent-shell-v7';
 const APP_SHELL = ['/', '/index.html', '/app.js', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -20,13 +20,22 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
+  // Always fetch fresh UI / API — never serve stale voice page from cache.
   if (
+    url.pathname === '/' ||
+    url.pathname === '/index.html' ||
+    url.pathname === '/app.js' ||
+    url.pathname === '/sw.js' ||
     url.pathname === '/health' ||
     url.pathname === '/tools' ||
     url.pathname === '/approvals' ||
-    url.pathname.startsWith('/planner/')
+    url.pathname.startsWith('/planner/') ||
+    url.pathname.startsWith('/voice/') ||
+    url.pathname.startsWith('/chat')
   ) {
-    event.respondWith(fetch(request));
+    event.respondWith(
+      fetch(request).catch(() => caches.match(request).then((cached) => cached || caches.match('/index.html'))),
+    );
     return;
   }
 

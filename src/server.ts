@@ -9,7 +9,9 @@ import type { NotificationChannel, ScheduleSpec } from "./planner/schedule.js";
 import type { PendingApproval } from "./safety/ApprovalGate.js";
 
 const publicRoot = resolve(process.cwd(), "public");
-const { agent, tools, approvalGate, connectors, planner, engineer, scheduler, channelGateway } = await createRuntime();
+const { agent, tools, approvalGate, connectors, planner, engineer, scheduler, channelGateway, voiceClient, sttClient } = await createRuntime();
+const voiceConfigured = connectors.voice;
+const sttConfigured = connectors.stt;
 
 const planStatuses: PlanStatus[] = ["inbox", "planned", "doing", "waiting", "done", "cancelled"];
 const priorities: PlanPriority[] = ["low", "normal", "high", "urgent"];
@@ -173,9 +175,11 @@ async function serveStatic(req: IncomingMessage, res: ServerResponse): Promise<b
     const info = await stat(target);
     if (!info.isFile()) return false;
     const body = await readFile(target);
+    const name = target.split(sep).pop() ?? "";
+    const noCache = name === "index.html" || name === "app.js" || name === "sw.js" || name === "manifest.webmanifest";
     res.writeHead(200, {
       "content-type": contentTypes[extname(target)] ?? "application/octet-stream",
-      "cache-control": target.endsWith("sw.js") ? "no-cache" : "public, max-age=300",
+      "cache-control": noCache ? "no-store, no-cache, must-revalidate" : "public, max-age=300",
     });
     res.end(body);
     return true;
@@ -521,6 +525,91 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && pathname === "/voice/health") {
+      if (!voiceConfigured) {
+        json(res, 503, { ok: false, configured: false, error: "OmniVoice is not configured" });
+        return;
+      }
+      const toolResult = await tools.execute("voice_health", {}, { sessionId: "http", userId: "http", workspaceRoot: config.workspaceRoot });
+      json(res, toolResult.ok ? 200 : 502, { ok: toolResult.ok, ...(toolResult.output as Record<string, unknown> ?? {}), error: toolResult.error });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/voice/speak") {
+      if (!voiceConfigured) {
+        json(res, 503, { ok: false, error: "OmniVoice is not configured" });
+        return;
+      }
+      const body = await readJson(req);
+      const text = typeof body.text === "string" ? body.text.trim() : "";
+      if (!text) {
+        json(res, 400, { ok: false, error: "text is required" });
+        return;
+      }
+      const toolResult = await tools.execute("voice_speak", body, { sessionId: "http", userId: "http", workspaceRoot: config.workspaceRoot });
+      if (!toolResult.ok || !toolResult.output || typeof toolResult.output !== "object") {
+        json(res, 502, { ok: false, error: toolResult.error ?? "voice synthesis failed" });
+        return;
+      }
+      const output = toolResult.output as { file?: string; format?: string; bytes?: number };
+      if (body.returnAudio === true && output.file) {
+        const audio = await readFile(output.file);
+        res.writeHead(200, {
+          "content-type": output.format === "wav" ? "audio/wav" : "application/octet-stream",
+          "content-length": String(audio.length),
+          "access-control-allow-origin": "*",
+          "cache-control": "no-store",
+        });
+        res.end(audio);
+        return;
+      }
+      json(res, 200, { ok: true, ...output });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/voice/chat") {
+      if (!voiceConfigured || !sttConfigured) {
+        json(res, 503, { ok: false, error: "Voice assistant requires both STT and TTS to be configured" });
+        return;
+      }
+
+      const body = await readJson(req);
+      const sessionId = typeof body.sessionId === "string" ? body.sessionId : crypto.randomUUID();
+      const userId = typeof body.userId === "string" ? body.userId : "voice-user";
+      const speak = body.speak !== false;
+      let userMessage = typeof body.text === "string" ? body.text.trim() : "";
+
+      if (!userMessage && typeof body.audioBase64 === "string" && body.audioBase64.trim()) {
+        const audio = Buffer.from(body.audioBase64, "base64");
+        const transcript = await sttClient.transcribe(audio, "voice-input.wav");
+        userMessage = transcript.text;
+      }
+
+      if (!userMessage) {
+        json(res, 400, { ok: false, error: "text or audioBase64 is required" });
+        return;
+      }
+
+      const result = await agent.run(userMessage, { sessionId, userId });
+      const response: Record<string, unknown> = {
+        ok: true,
+        transcript: userMessage,
+        answer: result.answer,
+        steps: result.steps,
+        correctness: result.correctness.status,
+      };
+
+      if (speak && result.answer.trim()) {
+        const spoken = await voiceClient.synthesize(result.answer);
+        response.audioBase64 = spoken.audio.toString("base64");
+        response.audioFormat = spoken.format;
+        response.audioBytes = spoken.bytes;
+      }
+
+      json(res, 200, response);
+      return;
+    }
+
     if (await serveStatic(req, res)) return;
     json(res, 404, { ok: false, error: "Not found" });
   } catch (error) {
@@ -543,6 +632,8 @@ server.listen(config.server.port, config.server.host, () => {
   console.log(`Loaded ${tools.list().length} tools for model ${config.llm.model}`);
   console.log(`Google Workspace configured: ${connectors.google ? "yes" : "no"}`);
   console.log(`Channel adapters: ${connectors.channels.map((channel) => `${channel.name}=${channel.configured ? "ready" : "not-configured"}`).join(", ") || "none"}`);
+  console.log(`OmniVoice TTS configured: ${connectors.voice ? "yes" : "no"}`);
+  console.log(`Speech-to-text configured: ${connectors.stt ? "yes" : "no"}`);
   console.log(`Planner scheduler interval: ${config.scheduler.intervalMs} ms`);
   console.log(`Engineer Loop Engine state: ${config.engineerFile}`);
 });

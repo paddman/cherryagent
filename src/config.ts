@@ -72,6 +72,9 @@ const lineChannelSecret = optionalEnv("CHERRY_LINE_CHANNEL_SECRET");
 const lineChannelAccessToken = optionalEnv("CHERRY_LINE_CHANNEL_ACCESS_TOKEN")
   ?? optionalEnv("CHERRY_NOTIFY_LINE_CHANNEL_ACCESS_TOKEN");
 
+const ttsBaseUrl = optionalEnv("CHERRY_TTS_BASE_URL");
+const sttBaseUrl = optionalEnv("CHERRY_STT_BASE_URL");
+
 export const config = {
   llm: {
     baseUrl: (process.env.CHERRY_LLM_BASE_URL ?? "http://127.0.0.1:8000/v1").replace(/\/$/, ""),
@@ -172,5 +175,17 @@ export const config = {
   server: {
     host: process.env.CHERRY_HOST ?? "0.0.0.0",
     port: integerEnv("CHERRY_PORT", 8787),
+  },
+  voice: {
+    baseUrl: ttsBaseUrl?.replace(/\/$/, "") ?? "",
+    timeoutMs: Math.max(1_000, integerEnv("CHERRY_TTS_TIMEOUT_MS", 120_000)),
+    language: optionalEnv("CHERRY_TTS_LANGUAGE") ?? "th",
+    format: (optionalEnv("CHERRY_TTS_FORMAT") ?? "wav") as "wav" | "mp3" | "opus" | "aac" | "flac" | "pcm",
+    configured: Boolean(ttsBaseUrl),
+  },
+  stt: {
+    baseUrl: sttBaseUrl?.replace(/\/$/, "") ?? "",
+    timeoutMs: Math.max(1_000, integerEnv("CHERRY_STT_TIMEOUT_MS", 120_000)),
+    configured: Boolean(sttBaseUrl),
   },
 } as const;
