@@ -47,10 +47,10 @@ function appendLimited(current: string, chunk: Buffer, limit: number): { value: 
 
 export class LinuxSshClient {
   readonly #host: string;
-  readonly #username?: string;
+  readonly #username: string | undefined;
   readonly #port: number;
-  readonly #privateKeyPath?: string;
-  readonly #knownHostsFile?: string;
+  readonly #privateKeyPath: string | undefined;
+  readonly #knownHostsFile: string | undefined;
   readonly #strictHostKeyChecking: boolean;
   readonly #timeoutMs: number;
   readonly #maxOutputBytes: number;
