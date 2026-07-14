@@ -1,5 +1,6 @@
 import type { AgentTool } from "../../core/types.js";
 import { createDesktopRuntimeTools } from "../../desktopRuntime.js";
+import { createLinuxRuntimeTools } from "../../linuxRuntime.js";
 
 export const systemTools: AgentTool[] = [
   {
@@ -51,5 +52,6 @@ export const systemTools: AgentTool[] = [
       return { expression, result };
     },
   },
+  ...createLinuxRuntimeTools(),
   ...createDesktopRuntimeTools(),
 ];
