@@ -56,13 +56,13 @@ function sqlTextArray(values: string[]): string {
 }
 
 function safeSeverity(value: number | undefined): number {
-  if (!Number.isFinite(value)) return 5;
-  return Math.min(10, Math.max(0, Math.floor(value!)));
+  if (value === undefined || !Number.isFinite(value)) return 5;
+  return Math.min(10, Math.max(0, Math.floor(value)));
 }
 
 function safeConfidence(value: number | undefined): number | null {
-  if (!Number.isFinite(value)) return null;
-  return Math.min(1, Math.max(0, value!));
+  if (value === undefined || !Number.isFinite(value)) return null;
+  return Math.min(1, Math.max(0, value));
 }
 
 export class SecurityEventStore {
