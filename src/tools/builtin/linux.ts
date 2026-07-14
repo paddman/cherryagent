@@ -93,14 +93,18 @@ export function createLinuxTools(linux: LinuxSshClient): AgentTool[] {
         required: ["path", "content"],
         additionalProperties: false,
       },
-      execute: async (args) => linux.writeFile(
-        requiredString(args, "path"),
-        String(args.content ?? ""),
-        {
-          ...(optionalBoolean(args, "sudo") !== undefined ? { sudo: optionalBoolean(args, "sudo") } : {}),
-          ...(optionalString(args, "mode") ? { mode: optionalString(args, "mode") } : {}),
-        },
-      ),
+      execute: async (args) => {
+        const sudo = optionalBoolean(args, "sudo");
+        const mode = optionalString(args, "mode");
+        return await linux.writeFile(
+          requiredString(args, "path"),
+          String(args.content ?? ""),
+          {
+            ...(sudo !== undefined ? { sudo } : {}),
+            ...(mode !== undefined ? { mode } : {}),
+          },
+        );
+      },
     },
     {
       name: "linux_service_status",
