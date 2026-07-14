@@ -1,7 +1,7 @@
 import { LinuxSshClient } from "./connectors/linux/LinuxSshClient.js";
 import type { AgentTool } from "./core/types.js";
+import { createSecurityRuntime } from "./securityRuntime.js";
 import { createLinuxTools } from "./tools/builtin/linux.js";
-import { createSecurityOpsTools } from "./tools/builtin/securityOps.js";
 
 function integerEnv(name: string, fallback: number): number {
   const parsed = Number.parseInt(process.env[name] ?? "", 10);
@@ -50,8 +50,9 @@ export function getLinuxRuntimeStatus(): LinuxRuntimeStatus {
 
 export function createLinuxRuntimeTools(): AgentTool[] {
   const linux = createLinuxRuntimeClient();
+  const security = createSecurityRuntime(linux);
   return [
     ...createLinuxTools(linux),
-    ...createSecurityOpsTools(linux),
+    ...security.tools,
   ];
 }
