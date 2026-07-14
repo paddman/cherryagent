@@ -1,7 +1,7 @@
 import { config } from "./config.js";
 import { DatabaseCliHub } from "./connectors/database/DatabaseCliHub.js";
 import type { LinuxSshClient } from "./connectors/linux/LinuxSshClient.js";
-import type { AgentTool } from "./core/types.js";
+import type { AgentTool, ToolContext } from "./core/types.js";
 import { SecurityEventStore } from "./security/SecurityEventStore.js";
 import { SecurityPolicyEngine, type SecurityExecutionMode } from "./security/SecurityPolicyEngine.js";
 import { createSecurityOpsTools } from "./tools/builtin/securityOps.js";
@@ -43,12 +43,16 @@ function executionSucceeded(output: unknown): boolean {
   return Boolean(output && typeof output === "object" && "exitCode" in output && (output as { exitCode?: unknown }).exitCode === 0);
 }
 
+function sourceIpField(target: string): { sourceIp: string } | Record<string, never> {
+  return target && !target.includes("/") ? { sourceIp: target } : {};
+}
+
 function guardSecurityOpsTools(
   baseTools: AgentTool[],
   policy: SecurityPolicyEngine,
   events: SecurityEventStore,
 ): AgentTool[] {
-  return baseTools.map((tool) => {
+  return baseTools.map((tool): AgentTool => {
     if (tool.name === "security_firewall_temporary_block") {
       return {
         ...tool,
@@ -62,9 +66,10 @@ function guardSecurityOpsTools(
             mode: { type: "string", enum: ["manual", "auto", "emergency"], description: "Execution mode; defaults to manual" },
           },
         },
-        execute: async (args, context) => {
+        execute: async (args: Record<string, unknown>, context: ToolContext) => {
           const mode = modeArg(args.mode);
           const target = String(args.target ?? "").trim();
+          const reason = typeof args.reason === "string" && args.reason.trim() ? args.reason.trim() : undefined;
           const decision = policy.evaluate({
             action: "temporary_block",
             target,
@@ -72,7 +77,7 @@ function guardSecurityOpsTools(
             confidence: numericArg(args, "confidence", mode === "manual" ? 1 : 0),
             evidenceCount: Math.max(0, Math.floor(numericArg(args, "evidenceCount", mode === "manual" ? 1 : 0))),
             mode,
-            reason: typeof args.reason === "string" ? args.reason : undefined,
+            ...(reason ? { reason } : {}),
           });
           if (!decision.allowed) {
             throw new Error(`Security policy denied containment: ${decision.reasons.join("; ")}`);
@@ -84,7 +89,7 @@ function guardSecurityOpsTools(
             category: "containment",
             severity: blocked ? 8 : 6,
             action: "temporary_block",
-            sourceIp: target.includes("/") ? undefined : target,
+            ...sourceIpField(target),
             confidence: decision.confidence,
             blocked,
             evidenceCount: decision.evidenceCount,
@@ -99,14 +104,14 @@ function guardSecurityOpsTools(
     if (tool.name === "security_firewall_remove_block") {
       return {
         ...tool,
-        execute: async (args, context) => {
+        execute: async (args: Record<string, unknown>, context: ToolContext) => {
           const target = String(args.target ?? "").trim();
           const output = await tool.execute(args, context);
           await events.record({
             category: "containment",
             severity: 3,
             action: "remove_block",
-            sourceIp: target.includes("/") ? undefined : target,
+            ...sourceIpField(target),
             blocked: false,
             evidenceCount: 1,
             tags: ["firewall", "rollback"],
