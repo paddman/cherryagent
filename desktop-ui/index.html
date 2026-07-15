@@ -1,59 +1,71 @@
 <!doctype html>
-<html lang="th">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CherryAgent</title>
+  <title>CherryAgent — Sign in</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
-<body>
-  <main class="app-shell">
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">WINDOWS DESKTOP AGENT</p>
-        <h1>CherryAgent</h1>
-        <p class="subtitle">ผู้ช่วย AI บน PC ที่มองหน้าจอ ขยับ mouse/keyboard ฟังเสียง พูด และใช้ Agentic Core ได้</p>
-      </div>
-      <button id="quitBtn" class="ghost">ออกจากโปรแกรม</button>
+<body class="login-body">
+  <main class="login-window">
+    <header class="login-titlebar">
+      <div class="brand"><span class="cherry-mark" aria-hidden="true"><i></i><b></b></span><span><strong>Cherry</strong>Agent</span></div>
+      <div class="window-controls" aria-hidden="true"><span>—</span><span>□</span><span>×</span></div>
     </header>
 
-    <section class="status-grid">
-      <article class="status-card"><span>Backend</span><strong id="backendStatus">กำลังตรวจ...</strong></article>
-      <article class="status-card"><span>Desktop Bridge</span><strong id="bridgeStatus">กำลังตรวจ...</strong></article>
-      <article class="status-card"><span>Pending approvals</span><strong id="approvalCount">0</strong></article>
-      <article class="status-card"><span>Config</span><strong id="configPath">กำลังโหลด...</strong></article>
-    </section>
-
-    <section class="workspace">
-      <aside class="sidebar">
-        <h2>Quick actions</h2>
-        <button data-prompt="ดูหน้าจอปัจจุบันด้วย vision แล้วบอกว่ามีอะไรสำคัญ ต้องทำอะไรต่อ และอย่าเดาเกินหลักฐาน">ดูหน้าจอด้วย Vision</button>
-        <button data-prompt="ฟังเสียงฉันหนึ่งครั้งจาก microphone แล้วตอบสิ่งที่ฉันพูด">ฟังเสียงฉัน</button>
-        <button data-prompt="พูดออกลำโพงว่า Cherry พร้อมช่วยงานแล้ว">ทดสอบเสียงพูด</button>
-        <button data-prompt="เช็กสถานะ Windows desktop bridge, monitor และความพร้อมของ mouse keyboard vision speech">ตรวจ Desktop Agent</button>
-
-        <div class="approval-panel">
-          <div class="panel-title">
-            <h2>Approval Inbox</h2>
-            <button id="refreshApprovals" class="small ghost">รีเฟรช</button>
-          </div>
-          <div id="approvals" class="approval-list"></div>
+    <section class="login-layout">
+      <aside class="login-copy">
+        <div>
+          <h1>Your AI workspace,<br />running <span>locally.</span></h1>
+          <p class="lead">CherryAgent brings multi-agent intelligence, desktop control, and secure approvals together in one local-first workspace.</p>
         </div>
+
+        <div class="feature-stack">
+          <article class="feature-card"><span class="feature-icon">◎</span><div><strong>Multi-Agent Workspace</strong><p>Orchestrate specialist agents that collaborate, hand off evidence, challenge assumptions, and verify completion.</p></div></article>
+          <article class="feature-card"><span class="feature-icon">▣</span><div><strong>Desktop Control</strong><p>See the screen, interact with applications, and execute real work through controlled tools.</p></div></article>
+          <article class="feature-card"><span class="feature-icon">✓</span><div><strong>Approval Inbox</strong><p>Review risky actions before execution with visible arguments and clear auditability.</p></div></article>
+          <article class="feature-card"><span class="feature-icon">◇</span><div><strong>Local AI Ready</strong><p>Run with local models and infrastructure for privacy, sovereignty, and operational control.</p></div></article>
+        </div>
+
+        <div class="security-note">◇ Enterprise-grade workflow · Your data can stay on your machine</div>
       </aside>
 
-      <section class="chat-panel">
-        <div id="messages" class="messages">
-          <article class="message assistant">
-            <div class="bubble">Cherry พร้อมแล้ว ลองสั่งงานหลายขั้นตอน เช่น “เปิดหน้าจอ ดูว่ามี error อะไร แล้วช่วยแก้โดยขอ approval ก่อนคลิกหรือพิมพ์”</div>
-          </article>
-        </div>
-        <form id="chatForm" class="composer">
-          <textarea id="messageInput" rows="3" placeholder="สั่ง Cherry ให้ทำงานบน PC..."></textarea>
-          <button id="sendBtn" type="submit">ส่งงาน</button>
+      <section class="login-card">
+        <span class="login-cherry cherry-mark" aria-hidden="true"><i></i><b></b></span>
+        <h2>Welcome <span>back</span></h2>
+        <p class="subtle center">Sign in to continue to your workspace</p>
+
+        <form id="loginForm" class="login-form">
+          <label>Email
+            <div class="field"><span>✉</span><input type="email" value="paddman@example.com" autocomplete="username" required /></div>
+          </label>
+          <label>Password
+            <div class="field"><span>⌁</span><input id="password" type="password" value="cherryagent" autocomplete="current-password" required /><button type="button" id="togglePassword" class="icon-only">◉</button></div>
+          </label>
+
+          <div class="form-row">
+            <label class="remember"><input type="checkbox" checked /> Remember me</label>
+            <a href="#" class="pink-link">Forgot password?</a>
+          </div>
+
+          <button class="primary-button wide" type="submit">Sign in <span>→</span></button>
+          <div class="divider"><span>or</span></div>
+          <button class="secondary-button wide" id="localWorkspaceBtn" type="button">▣ Continue with local workspace</button>
         </form>
+
+        <div class="secure-pill"><span class="dot green"></span> Secure by design. Local-first. Enterprise ready.</div>
       </section>
     </section>
   </main>
-  <script src="./app.js"></script>
+
+  <script>
+    const openWorkspace = () => window.location.href = './dashboard.html';
+    document.getElementById('loginForm').addEventListener('submit', event => { event.preventDefault(); openWorkspace(); });
+    document.getElementById('localWorkspaceBtn').addEventListener('click', openWorkspace);
+    document.getElementById('togglePassword').addEventListener('click', () => {
+      const input = document.getElementById('password');
+      input.type = input.type === 'password' ? 'text' : 'password';
+    });
+  </script>
 </body>
 </html>
