@@ -97,14 +97,22 @@ Next:
 
 ### Google Workspace
 
-Target tools:
+Current:
 
-- Gmail search/read/draft/send/reply/forward/archive/label
-- Calendar search/free-busy/create/update/respond/delete
-- Drive search/read/upload/move/share
-- Docs read/create/edit
-- Sheets read/write/formula/chart
-- Slides create/edit/export
+- Gmail search/read/draft/send/reply/archive
+- Calendar list/create/update/delete
+- Drive search/read/create-text/move
+- Docs create/read/append-text
+- Sheets create/read/update-range/append-row (formulas supported as cell values)
+- Slides create/read/append-slide
+
+Target (not yet implemented):
+
+- Gmail forward/label
+- Calendar free-busy/respond
+- Drive upload (binary)/share
+- Sheets charts
+- Slides export-to-PDF and richer layout/image editing
 
 Sending mail, external sharing, and destructive actions must remain approval-gated.
 

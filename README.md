@@ -47,6 +47,9 @@ Already included:
 - Gmail search/read/draft/send/reply/archive tools
 - Google Calendar list/create/update/delete tools
 - Google Drive search/read/create-text/move tools
+- Google Docs create/read/append-text tools
+- Google Sheets create/read/update-range/append-row tools
+- Google Slides create/read/append-slide tools
 - HTTP API
 - Installable responsive PWA
 - Docker support
@@ -355,6 +358,25 @@ External notification schedules use an `external` risk tool and should enter the
 - `drive_create_text_file`
 - `drive_move_file`
 
+## Google Docs
+
+- `docs_create`
+- `docs_read`
+- `docs_append_text`
+
+## Google Sheets
+
+- `sheets_create`
+- `sheets_read`
+- `sheets_update_range`
+- `sheets_append_row`
+
+## Google Slides
+
+- `slides_create`
+- `slides_read`
+- `slides_append_slide`
+
 ---
 
 # Architecture
@@ -541,25 +563,29 @@ External and dangerous actions require approval. Engineer Loop tracking does not
 
 # Current limitations
 
-- Engineer Loop currently orchestrates whatever real tools are installed. To perform SSH, Proxmox, VMware, Kubernetes, browser automation, or database repair, those tool packs must be added.
+- SSH, Proxmox, and vSphere/VMware tool packs exist; Kubernetes, Docker orchestration, Grafana, Prometheus, Cloudflare, DNS, firewall, and ticketing tool packs are not yet added.
+- Browser automation (Playwright) is not yet implemented.
+- Microsoft 365 (Outlook, Teams, OneDrive, Word, Excel, PowerPoint) is not yet implemented.
+- Local PDF/DOCX/XLSX/PPTX generation and editing (outside of native Google Docs/Sheets/Slides) and OCR/vision are not yet implemented.
+- Google Sheets chart creation and Google Slides export-to-PDF are not yet implemented; sheet formulas are supported through cell values.
 - Engineer and planner state currently use local JSON, suitable for a single-node MVP. Multi-user production should move state, locks, audit logs, and queues to PostgreSQL/Redis.
 - Browser notifications require a connected PWA client; full Web Push for completely disconnected clients is not yet implemented.
 - Email, LINE, Slack, and webhook delivery require corresponding configuration.
 - Notification delivery results are logged but not yet persisted as a per-channel delivery history on each alert.
+- No proactive autopilot yet: daily briefing, overdue-task hunting, and autonomous work-queue generation from signals are not yet implemented.
 
 # Product direction
 
 Priority next layers:
 
-1. SSH + Proxmox + VMware + Docker + Kubernetes engineer tools
-2. Playwright browser automation
-3. PostgreSQL/Redis state, locks, queues, and audit logs
-4. Google Docs, Sheets, Slides
-5. Microsoft 365, Teams, Outlook, OneDrive
-6. PDF/DOCX/XLSX/PPTX generation and editing
-7. Web Push and device-specific background notification workers
-8. Meeting capture, transcript, summary, decisions, and follow-up
-9. Daily briefing, overdue-task hunting, and proactive work queue
-10. Scoped autonomous office/ops autopilot with approval budgets
+1. Playwright browser automation
+2. PostgreSQL/Redis state, locks, queues, and audit logs
+3. Microsoft 365, Teams, Outlook, OneDrive
+4. Local PDF/DOCX/XLSX/PPTX generation and editing, plus OCR/vision
+5. Kubernetes, Docker, Grafana, Prometheus, Cloudflare/DNS/firewall, ticketing tool packs
+6. Web Push and device-specific background notification workers
+7. Meeting capture, transcript, summary, decisions, and follow-up
+8. Daily briefing, overdue-task hunting, and proactive work queue
+9. Scoped autonomous office/ops autopilot with approval budgets
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the target design.

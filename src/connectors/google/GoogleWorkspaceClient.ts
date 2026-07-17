@@ -119,6 +119,68 @@ function escapeDriveLiteral(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
+type DocsParagraphElement = { textRun?: { content?: string } };
+type DocsStructuralElement = {
+  paragraph?: { elements?: DocsParagraphElement[] };
+  table?: { tableRows?: Array<{ tableCells?: Array<{ content?: DocsStructuralElement[] }> }> };
+};
+type DocsDocument = {
+  documentId?: string;
+  title?: string;
+  revisionId?: string;
+  body?: { content?: DocsStructuralElement[] };
+};
+
+function extractDocsText(elements: DocsStructuralElement[] | undefined): string {
+  if (!elements) return "";
+  let text = "";
+  for (const element of elements) {
+    if (element.paragraph?.elements) {
+      for (const run of element.paragraph.elements) {
+        if (run.textRun?.content) text += run.textRun.content;
+      }
+    }
+    if (element.table?.tableRows) {
+      for (const row of element.table.tableRows) {
+        for (const cell of row.tableCells ?? []) {
+          text += extractDocsText(cell.content);
+        }
+      }
+    }
+  }
+  return text;
+}
+
+type SheetsSpreadsheet = {
+  spreadsheetId?: string;
+  spreadsheetUrl?: string;
+  properties?: { title?: string };
+  sheets?: Array<{ properties?: { title?: string; sheetId?: number } }>;
+};
+
+type SlidesSlide = {
+  objectId?: string;
+  pageElements?: Array<{
+    shape?: { text?: { textElements?: Array<{ textRun?: { content?: string } }> } };
+  }>;
+};
+type SlidesPresentation = {
+  presentationId?: string;
+  presentationUrl?: string;
+  title?: string;
+  slides?: SlidesSlide[];
+};
+
+function extractSlideText(slide: SlidesSlide | undefined): string {
+  const runs: string[] = [];
+  for (const element of slide?.pageElements ?? []) {
+    for (const textElement of element.shape?.text?.textElements ?? []) {
+      if (textElement.textRun?.content) runs.push(textElement.textRun.content);
+    }
+  }
+  return runs.join("").trim();
+}
+
 export class GoogleWorkspaceClient {
   constructor(private readonly auth: GoogleAuth) {}
 
@@ -462,5 +524,199 @@ export class GoogleWorkspaceClient {
 
     const result = await this.requestJson<DriveFile>(url, { method: "PATCH" });
     return { ok: true, file: result, verified: Boolean(result.id) };
+  }
+
+  async docsCreate(title: string, initialText?: string): Promise<unknown> {
+    const doc = await this.requestJson<DocsDocument>("https://docs.googleapis.com/v1/documents", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+    if (!doc.documentId) throw new Error("Google Docs did not return a document ID");
+
+    if (initialText) {
+      await this.requestJson(
+        `https://docs.googleapis.com/v1/documents/${encodeURIComponent(doc.documentId)}:batchUpdate`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            requests: [{ insertText: { endOfSegmentLocation: {}, text: initialText } }],
+          }),
+        },
+      );
+    }
+
+    return {
+      ok: true,
+      documentId: doc.documentId,
+      title: doc.title,
+      url: `https://docs.google.com/document/d/${doc.documentId}/edit`,
+      verified: Boolean(doc.documentId),
+    };
+  }
+
+  async docsRead(documentId: string): Promise<unknown> {
+    const doc = await this.requestJson<DocsDocument>(
+      `https://docs.googleapis.com/v1/documents/${encodeURIComponent(documentId)}`,
+    );
+    const content = extractDocsText(doc.body?.content).slice(0, 100_000);
+    return {
+      documentId: doc.documentId,
+      title: doc.title,
+      revisionId: doc.revisionId,
+      content,
+      verified: Boolean(doc.documentId),
+    };
+  }
+
+  async docsAppendText(documentId: string, text: string): Promise<unknown> {
+    const result = await this.requestJson<{ documentId?: string }>(
+      `https://docs.googleapis.com/v1/documents/${encodeURIComponent(documentId)}:batchUpdate`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          requests: [{ insertText: { endOfSegmentLocation: {}, text } }],
+        }),
+      },
+    );
+    return { ok: true, documentId: result.documentId ?? documentId, verified: Boolean(result.documentId) };
+  }
+
+  async sheetsCreate(title: string): Promise<unknown> {
+    const sheet = await this.requestJson<SheetsSpreadsheet>("https://sheets.googleapis.com/v4/spreadsheets", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ properties: { title } }),
+    });
+    return {
+      ok: true,
+      spreadsheetId: sheet.spreadsheetId,
+      title: sheet.properties?.title,
+      url: sheet.spreadsheetUrl,
+      verified: Boolean(sheet.spreadsheetId),
+    };
+  }
+
+  async sheetsRead(spreadsheetId: string, range = "A1:Z1000"): Promise<unknown> {
+    const result = await this.requestJson<{ range?: string; values?: unknown[][] }>(
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}`,
+    );
+    return { range: result.range ?? range, values: result.values ?? [], verified: true };
+  }
+
+  async sheetsUpdateRange(spreadsheetId: string, range: string, values: unknown[][]): Promise<unknown> {
+    const result = await this.requestJson<{ updatedRange?: string; updatedCells?: number }>(
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ values }),
+      },
+    );
+    return {
+      ok: true,
+      updatedRange: result.updatedRange,
+      updatedCells: result.updatedCells,
+      verified: Boolean(result.updatedRange),
+    };
+  }
+
+  async sheetsAppendRow(spreadsheetId: string, range: string, values: unknown[]): Promise<unknown> {
+    const result = await this.requestJson<{
+      updates?: { updatedRange?: string; updatedCells?: number };
+    }>(
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ values: [values] }),
+      },
+    );
+    return {
+      ok: true,
+      updatedRange: result.updates?.updatedRange,
+      updatedCells: result.updates?.updatedCells,
+      verified: Boolean(result.updates?.updatedRange),
+    };
+  }
+
+  async slidesCreate(title: string): Promise<unknown> {
+    const presentation = await this.requestJson<SlidesPresentation>(
+      "https://slides.googleapis.com/v1/presentations",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title }),
+      },
+    );
+    return {
+      ok: true,
+      presentationId: presentation.presentationId,
+      title: presentation.title,
+      url: `https://docs.google.com/presentation/d/${presentation.presentationId}/edit`,
+      verified: Boolean(presentation.presentationId),
+    };
+  }
+
+  async slidesRead(presentationId: string): Promise<unknown> {
+    const presentation = await this.requestJson<SlidesPresentation>(
+      `https://slides.googleapis.com/v1/presentations/${encodeURIComponent(presentationId)}`,
+    );
+    const slides = (presentation.slides ?? []).map((slide, index) => ({
+      index,
+      objectId: slide.objectId,
+      text: extractSlideText(slide),
+    }));
+    return {
+      presentationId: presentation.presentationId,
+      title: presentation.title,
+      slideCount: slides.length,
+      slides,
+      verified: Boolean(presentation.presentationId),
+    };
+  }
+
+  async slidesAppendSlide(presentationId: string, title: string, body?: string): Promise<unknown> {
+    const presentation = await this.requestJson<SlidesPresentation>(
+      `https://slides.googleapis.com/v1/presentations/${encodeURIComponent(presentationId)}`,
+    );
+    const insertionIndex = presentation.slides?.length ?? 0;
+    const slideId = `cherry_${crypto.randomUUID().replace(/-/g, "")}`;
+    const titleId = `${slideId}_title`;
+    const bodyId = `${slideId}_body`;
+
+    const requests: unknown[] = [
+      {
+        createSlide: {
+          objectId: slideId,
+          insertionIndex,
+          slideLayoutReference: { predefinedLayout: "TITLE_AND_BODY" },
+          placeholderIdMappings: [
+            { layoutPlaceholder: { type: "TITLE", index: 0 }, objectId: titleId },
+            { layoutPlaceholder: { type: "BODY", index: 0 }, objectId: bodyId },
+          ],
+        },
+      },
+      { insertText: { objectId: titleId, text: title } },
+      ...(body ? [{ insertText: { objectId: bodyId, text: body } }] : []),
+    ];
+
+    const result = await this.requestJson<{ presentationId?: string }>(
+      `https://slides.googleapis.com/v1/presentations/${encodeURIComponent(presentationId)}:batchUpdate`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ requests }),
+      },
+    );
+    return {
+      ok: true,
+      presentationId: result.presentationId ?? presentationId,
+      slideId,
+      insertionIndex,
+      verified: Boolean(result.presentationId),
+    };
   }
 }

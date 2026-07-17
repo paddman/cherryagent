@@ -311,5 +311,176 @@ export function createGoogleWorkspaceTools(client: GoogleWorkspaceClient): Agent
           optionalStringArray(args, "removeParentIds") ?? [],
         ),
     },
+    {
+      name: "docs_create",
+      description: "Create a new Google Doc, optionally with initial body text. This creates external Drive state and requires approval by default.",
+      risk: "external",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Document title" },
+          initialText: { type: "string", description: "Optional text to insert into the new document" },
+        },
+        required: ["title"],
+        additionalProperties: false,
+      },
+      execute: async (args) =>
+        client.docsCreate(requiredString(args, "title"), optionalString(args, "initialText")),
+    },
+    {
+      name: "docs_read",
+      description: "Read a Google Doc's title and plain-text body content by document ID.",
+      risk: "safe",
+      parameters: {
+        type: "object",
+        properties: { documentId: { type: "string", description: "Google Docs document ID" } },
+        required: ["documentId"],
+        additionalProperties: false,
+      },
+      execute: async (args) => client.docsRead(requiredString(args, "documentId")),
+    },
+    {
+      name: "docs_append_text",
+      description: "Append plain text to the end of an existing Google Doc. Requires approval by default.",
+      risk: "external",
+      parameters: {
+        type: "object",
+        properties: {
+          documentId: { type: "string", description: "Google Docs document ID" },
+          text: { type: "string", description: "Text to append at the end of the document" },
+        },
+        required: ["documentId", "text"],
+        additionalProperties: false,
+      },
+      execute: async (args) =>
+        client.docsAppendText(requiredString(args, "documentId"), requiredString(args, "text")),
+    },
+    {
+      name: "sheets_create",
+      description: "Create a new Google Sheets spreadsheet. This creates external Drive state and requires approval by default.",
+      risk: "external",
+      parameters: {
+        type: "object",
+        properties: { title: { type: "string", description: "Spreadsheet title" } },
+        required: ["title"],
+        additionalProperties: false,
+      },
+      execute: async (args) => client.sheetsCreate(requiredString(args, "title")),
+    },
+    {
+      name: "sheets_read",
+      description: "Read cell values from a Google Sheets range, for example Sheet1!A1:D20. Defaults to A1:Z1000 on the first sheet.",
+      risk: "safe",
+      parameters: {
+        type: "object",
+        properties: {
+          spreadsheetId: { type: "string", description: "Google Sheets spreadsheet ID" },
+          range: { type: "string", description: "A1 notation range, optionally including a sheet name" },
+        },
+        required: ["spreadsheetId"],
+        additionalProperties: false,
+      },
+      execute: async (args) =>
+        client.sheetsRead(requiredString(args, "spreadsheetId"), optionalString(args, "range")),
+    },
+    {
+      name: "sheets_update_range",
+      description: "Overwrite cell values in a Google Sheets range, including formulas such as =SUM(A1:A5). Requires approval by default.",
+      risk: "external",
+      parameters: {
+        type: "object",
+        properties: {
+          spreadsheetId: { type: "string", description: "Google Sheets spreadsheet ID" },
+          range: { type: "string", description: "A1 notation range to overwrite, for example Sheet1!A1:B2" },
+          values: {
+            type: "array",
+            items: { type: "array", items: {} },
+            description: "Row-major 2D array of cell values or formulas",
+          },
+        },
+        required: ["spreadsheetId", "range", "values"],
+        additionalProperties: false,
+      },
+      execute: async (args) => {
+        const values = args.values;
+        if (!Array.isArray(values) || !values.every((row) => Array.isArray(row))) {
+          throw new Error("values must be a 2D array of rows");
+        }
+        return client.sheetsUpdateRange(
+          requiredString(args, "spreadsheetId"),
+          requiredString(args, "range"),
+          values as unknown[][],
+        );
+      },
+    },
+    {
+      name: "sheets_append_row",
+      description: "Append one row of values after the last row of data in a Google Sheets range or sheet. Requires approval by default.",
+      risk: "external",
+      parameters: {
+        type: "object",
+        properties: {
+          spreadsheetId: { type: "string", description: "Google Sheets spreadsheet ID" },
+          range: { type: "string", description: "Sheet name or A1 range identifying the table, for example Sheet1" },
+          values: { type: "array", items: {}, description: "Cell values for the new row, in column order" },
+        },
+        required: ["spreadsheetId", "range", "values"],
+        additionalProperties: false,
+      },
+      execute: async (args) => {
+        const values = args.values;
+        if (!Array.isArray(values)) throw new Error("values must be an array");
+        return client.sheetsAppendRow(
+          requiredString(args, "spreadsheetId"),
+          requiredString(args, "range"),
+          values as unknown[],
+        );
+      },
+    },
+    {
+      name: "slides_create",
+      description: "Create a new Google Slides presentation. This creates external Drive state and requires approval by default.",
+      risk: "external",
+      parameters: {
+        type: "object",
+        properties: { title: { type: "string", description: "Presentation title" } },
+        required: ["title"],
+        additionalProperties: false,
+      },
+      execute: async (args) => client.slidesCreate(requiredString(args, "title")),
+    },
+    {
+      name: "slides_read",
+      description: "Read a Google Slides presentation's title and per-slide text content by presentation ID.",
+      risk: "safe",
+      parameters: {
+        type: "object",
+        properties: { presentationId: { type: "string", description: "Google Slides presentation ID" } },
+        required: ["presentationId"],
+        additionalProperties: false,
+      },
+      execute: async (args) => client.slidesRead(requiredString(args, "presentationId")),
+    },
+    {
+      name: "slides_append_slide",
+      description: "Append a new title-and-body slide to the end of an existing Google Slides presentation. Requires approval by default.",
+      risk: "external",
+      parameters: {
+        type: "object",
+        properties: {
+          presentationId: { type: "string", description: "Google Slides presentation ID" },
+          title: { type: "string", description: "New slide title" },
+          body: { type: "string", description: "Optional new slide body text" },
+        },
+        required: ["presentationId", "title"],
+        additionalProperties: false,
+      },
+      execute: async (args) =>
+        client.slidesAppendSlide(
+          requiredString(args, "presentationId"),
+          requiredString(args, "title"),
+          optionalString(args, "body"),
+        ),
+    },
   ];
 }
