@@ -25,6 +25,7 @@ import { ApprovalGate } from "./safety/ApprovalGate.js";
 import { ToolRegistry } from "./tools/ToolRegistry.js";
 import { createAgenticTools } from "./tools/builtin/agentic.js";
 import { createDatabaseTools } from "./tools/builtin/database.js";
+import { documentTools } from "./tools/builtin/documents.js";
 import { createEngineerTools } from "./tools/builtin/engineer.js";
 import { fileTools } from "./tools/builtin/files.js";
 import { createGoogleWorkspaceTools } from "./tools/builtin/googleWorkspace.js";
@@ -158,6 +159,7 @@ export async function createRuntime(): Promise<{
   for (const tool of [
     ...systemTools,
     ...fileTools,
+    ...documentTools,
     ...createOfficeTools(memory),
     ...createPlannerTools(planner),
     ...createEngineerTools(engineer),

@@ -2,7 +2,7 @@ import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve, sep } from "node:path";
 import type { AgentTool, ToolContext } from "../../core/types.js";
 
-function sandboxPath(context: ToolContext, requested: unknown): string {
+export function sandboxPath(context: ToolContext, requested: unknown): string {
   if (typeof requested !== "string" || !requested.trim()) {
     throw new Error("path must be a non-empty string");
   }

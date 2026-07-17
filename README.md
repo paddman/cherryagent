@@ -50,6 +50,10 @@ Already included:
 - Google Docs create/read/append-text tools
 - Google Sheets create/read/update-range/append-row tools
 - Google Slides create/read/append-slide tools
+- Local PDF create/append-page/read tools
+- Local DOCX create/read tools
+- Local XLSX create/read/update-range tools (formula support)
+- Local PPTX create/read tools
 - HTTP API
 - Installable responsive PWA
 - Docker support
@@ -379,6 +383,46 @@ External notification schedules use an `external` risk tool and should enter the
 
 ---
 
+# Local document tools
+
+Local PDF/DOCX/XLSX/PPTX generation and editing, sandboxed inside `CHERRY_WORKSPACE`
+alongside `files_*` tools. Unlike the Google Workspace pack these require no
+external auth or network access.
+
+## PDF
+
+- `documents_create_pdf`
+- `documents_append_pdf_page`
+- `documents_read_pdf`
+
+## Word (DOCX)
+
+- `documents_create_docx`
+- `documents_read_docx`
+
+DOCX editing is limited to creating a new file; in-place editing of an
+existing `.docx` is not yet supported.
+
+## Excel (XLSX)
+
+- `documents_create_xlsx`
+- `documents_read_xlsx`
+- `documents_update_xlsx_range`
+
+Cells accept plain values or `{"formula": "SUM(A1:A5)"}` objects. Chart
+creation is not yet supported.
+
+## PowerPoint (PPTX)
+
+- `documents_create_pptx`
+- `documents_read_pptx`
+
+PPTX editing is limited to creating a new file; appending a slide to an
+existing `.pptx` is not yet supported (unlike Google Slides' native API,
+no pure-JS library can safely modify an existing OOXML presentation).
+
+---
+
 # Architecture
 
 ```text
@@ -566,7 +610,7 @@ External and dangerous actions require approval. Engineer Loop tracking does not
 - SSH, Proxmox, and vSphere/VMware tool packs exist; Kubernetes, Docker orchestration, Grafana, Prometheus, Cloudflare, DNS, firewall, and ticketing tool packs are not yet added.
 - Browser automation (Playwright) is not yet implemented.
 - Microsoft 365 (Outlook, Teams, OneDrive, Word, Excel, PowerPoint) is not yet implemented.
-- Local PDF/DOCX/XLSX/PPTX generation and editing (outside of native Google Docs/Sheets/Slides) and OCR/vision are not yet implemented.
+- Local PDF/DOCX/XLSX/PPTX generation exists (`documents_*` tools), but DOCX and PPTX support create/read only — no in-place editing of an existing file, since no pure-JS library can safely round-trip those OOXML formats. PDF and XLSX support real edits (append page, update range). OCR/vision, PDF signature workflows, and Excel charts are not yet implemented.
 - Google Sheets chart creation and Google Slides export-to-PDF are not yet implemented; sheet formulas are supported through cell values.
 - Engineer and planner state currently use local JSON, suitable for a single-node MVP. Multi-user production should move state, locks, audit logs, and queues to PostgreSQL/Redis.
 - Browser notifications require a connected PWA client; full Web Push for completely disconnected clients is not yet implemented.
@@ -581,7 +625,7 @@ Priority next layers:
 1. Playwright browser automation
 2. PostgreSQL/Redis state, locks, queues, and audit logs
 3. Microsoft 365, Teams, Outlook, OneDrive
-4. Local PDF/DOCX/XLSX/PPTX generation and editing, plus OCR/vision
+4. In-place DOCX/PPTX editing, PDF signature workflows, Excel charts, and OCR/vision
 5. Kubernetes, Docker, Grafana, Prometheus, Cloudflare/DNS/firewall, ticketing tool packs
 6. Web Push and device-specific background notification workers
 7. Meeting capture, transcript, summary, decisions, and follow-up

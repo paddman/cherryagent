@@ -130,12 +130,21 @@ Target tools:
 
 ### Documents
 
-Target capabilities:
+Current (local, workspace-sandboxed, no external auth — see `documentTools` in
+`src/tools/builtin/documents.ts`):
 
-- PDF extract/edit/generate/signature workflow
-- DOCX create/edit/style
-- XLSX read/write/formulas/charts
-- PPTX create/edit
+- PDF create/append-page/extract-text (`pdf-lib` + `pdf-parse`)
+- DOCX create/extract-text (`docx` + `mammoth`)
+- XLSX create/read/update-range with formula support (`exceljs`)
+- PPTX create/extract-text (`pptxgenjs` + manual OOXML text extraction)
+
+Target (not yet implemented):
+
+- PDF signature workflow
+- DOCX/PPTX in-place editing of an existing file (no pure-JS OOXML editor
+  library exists for either format; would likely require shelling out to
+  LibreOffice headless or a similar external converter)
+- XLSX charts
 - OCR/vision
 - report generation from mixed files
 
