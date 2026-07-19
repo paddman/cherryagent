@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html lang="th">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#6d28d9" />
+  <meta name="theme-color" content="#fff8f6" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>CherryAgent Office Planner</title>
+  <title>CherryAgent · ผู้ช่วยงานของคุณ</title>
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
   <style>
@@ -178,17 +178,201 @@
       .chat-shell { height: calc(100dvh - 166px); }
     }
   </style>
+  <style>
+    /* Cherry home base: warm, friendly and readable without hiding the ops depth. */
+    :root {
+      color-scheme: light;
+      --bg: #fff8f6;
+      --panel: #ffffff;
+      --panel2: #fff4f1;
+      --line: #f1dedb;
+      --muted: #8b7d7c;
+      --ink: #342b35;
+      --purple: #7b61c9;
+      --pink: #ed6c92;
+      --green: #49b883;
+      --red: #dc6a70;
+      --amber: #d39a45;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+    body {
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 78% -10%, rgba(249, 207, 221, .65), transparent 29rem),
+        radial-gradient(circle at 5% 8%, rgba(226, 218, 247, .65), transparent 24rem),
+        linear-gradient(180deg, #fffaf8 0%, #fff4f1 100%);
+    }
+    .shell { grid-template-columns: 252px minmax(0, 1fr); }
+    .sidebar {
+      padding: 22px 15px;
+      border-right: 1px solid rgba(236, 207, 206, .85);
+      background: rgba(255, 252, 251, .88);
+      box-shadow: 12px 0 40px rgba(156, 105, 117, .04);
+    }
+    .brand { padding: 3px 8px; gap: 12px; }
+    .logo {
+      position: relative;
+      width: 44px;
+      height: 44px;
+      border-radius: 16px;
+      background: linear-gradient(145deg, #ff9db6, #e85b86);
+      box-shadow: 0 11px 22px rgba(232, 91, 134, .23);
+      color: #fff;
+      font-size: 0;
+    }
+    .logo::before { content: "🍒"; font-size: 22px; filter: saturate(1.05); }
+    .logo::after { content: ""; position: absolute; width: 10px; height: 5px; border-radius: 100% 0 100% 0; background: #a6d9a4; top: 8px; right: 8px; transform: rotate(-18deg); }
+    .brand h1 { color: #3b2c39; font-size: 18px; letter-spacing: -.02em; }
+    .brand p { color: #a1888b; font-size: 11px; }
+    .nav { gap: 5px; margin-top: 6px; }
+    .nav-button {
+      position: relative;
+      color: #75676f;
+      padding: 12px 12px;
+      border-radius: 14px;
+      font-weight: 650;
+      transition: transform .16s ease, background .16s ease, color .16s ease;
+    }
+    .nav-button::before { width: 25px; margin-right: 5px; font-size: 15px; text-align: center; }
+    .nav-button[data-view="dashboard"]::before { content: "☀"; color: #e5aa55; }
+    .nav-button[data-view="flow"]::before { content: "✦"; color: #7b61c9; }
+    .nav-button[data-view="reminders"]::before { content: "♡"; color: #ed6c92; }
+    .nav-button[data-view="engineer"]::before { content: "🛠"; font-size: 13px; }
+    .nav-button[data-view="chat"]::before { content: "✿"; color: #50b38a; }
+    .nav-button:hover { color: #473644; background: #fff0ef; transform: translateX(2px); }
+    .nav-button.active { color: #d9537b; background: #ffecef; box-shadow: inset 3px 0 0 #ed6c92; }
+    .nav-count { color: #9a6a7a; background: #f8d9df; font-weight: 800; }
+    .runtime {
+      border: 1px solid #f0dada;
+      background: linear-gradient(150deg, #fff6f4, #fff);
+      border-radius: 17px;
+      padding: 14px;
+      color: #9b8589;
+      box-shadow: 0 10px 25px rgba(171, 112, 124, .06);
+    }
+    .runtime-row { color: #5f4d58; }
+    .dot { background: var(--green); box-shadow: 0 0 0 4px rgba(73, 184, 131, .12); }
+    .install { color: #bb4d71; border-color: #f4bacb; background: #ffecef; }
+    .topbar {
+      height: 72px;
+      padding: 0 28px;
+      border-bottom: 1px solid rgba(236, 207, 206, .85);
+      background: rgba(255, 250, 249, .78);
+      box-shadow: 0 8px 24px rgba(156, 105, 117, .04);
+    }
+    .topbar h2 { color: #5a4452; font-size: 16px; letter-spacing: -.01em; }
+    .ghost-button, .secondary { color: #755f69; border-color: #edd5d3; background: rgba(255,255,255,.82); }
+    .ghost-button:hover, .secondary:hover { border-color: #e7a9b9; background: #fff0f2; }
+    .approval-count { background: #ed6c92; }
+    .view { max-width: 1320px; margin: 0 auto; padding: 28px 30px 46px; }
+    .hero {
+      position: relative;
+      align-items: center;
+      min-height: 170px;
+      padding: 27px 30px;
+      border: 1px solid #f0d8d7;
+      border-radius: 25px;
+      overflow: hidden;
+      background: linear-gradient(115deg, #fff1ed 0%, #fffaf8 52%, #f8f1ff 100%);
+      box-shadow: 0 17px 34px rgba(169, 103, 119, .08);
+    }
+    .hero::before { content: "✦"; position: absolute; right: 11%; top: 20px; color: #edb3bf; font-size: 22px; transform: rotate(17deg); }
+    .hero::after { content: ""; position: absolute; right: 4%; bottom: -54px; width: 190px; height: 190px; border-radius: 50%; background: rgba(244, 209, 222, .38); }
+    .eyebrow { color: #d55c81; font-weight: 800; letter-spacing: .08em; }
+    .hero h1 { color: #3d2b3a; font-size: clamp(26px, 3vw, 39px); letter-spacing: -.045em; }
+    .hero p { color: #8b757e; max-width: 620px; line-height: 1.55; }
+    .date-chip { position: relative; z-index: 1; border-color: #efd2d5; background: rgba(255,255,255,.78); color: #926a78; }
+    .stats { gap: 12px; margin: 18px 0; }
+    .stat {
+      min-height: 96px;
+      border: 1px solid #f0dcda;
+      background: rgba(255,255,255,.76);
+      border-radius: 17px;
+      padding: 15px 16px;
+      box-shadow: 0 8px 20px rgba(169,103,119,.04);
+    }
+    .stat-label { color: #9b8589; font-weight: 650; }
+    .stat-value { color: #513c4b; font-size: 29px; }
+    .stat.overdue .stat-value { color: #d86e73; }
+    .stat.alerts .stat-value { color: #db6d92; }
+    .grid-2 { gap: 16px; }
+    .card {
+      border-color: #f0dcda;
+      background: rgba(255,255,255,.84);
+      border-radius: 19px;
+      padding: 18px;
+      box-shadow: 0 10px 26px rgba(169,103,119,.045);
+    }
+    .card-head h3 { color: #4b3846; font-size: 15px; }
+    .card-sub, .item-meta { color: #a18b90; }
+    input, select, textarea { color: #4c3b48; border-color: #ead9d8; background: #fffaf9; }
+    input::placeholder, textarea::placeholder { color: #b6a2a6; }
+    input:focus, select:focus, textarea:focus { border-color: #ed91ab; box-shadow: 0 0 0 3px rgba(237,108,146,.12); }
+    .primary { color: #fff; background: linear-gradient(135deg, #ef7798, #d95e87); box-shadow: 0 8px 16px rgba(217,94,135,.18); }
+    .primary:hover { filter: saturate(1.07) brightness(1.02); transform: translateY(-1px); }
+    .timeline-item, .reminder-card, .alert-card, .flow-card, .engineer-loop-card, .runbook-card { border-color: #f0dfdd; background: #fffaf9; }
+    .timeline-time, .reminder-next { color: #ce6686; }
+    .pill { background: #f7e9e8; color: #866c76; }
+    .pill.urgent { background: #ffe0e2; color: #c55862; }
+    .pill.high { background: #fff0cf; color: #ad7b22; }
+    .empty { color: #ad989c; border-color: #ebd5d4; background: rgba(255,255,255,.45); }
+    .section-head h1 { color: #4b3846; letter-spacing: -.03em; }
+    .quick-add { padding: 12px; border: 1px solid #f0dcd9; border-radius: 16px; background: rgba(255,255,255,.63); }
+    .column { border-color: #f0dddc; background: rgba(255,255,255,.55); }
+    .column.dragover { border-color: #df8ba3; background: #fff0f3; }
+    .column-head { color: #7b616c; }
+    .flow-card:hover { border-color: #e6aabd; box-shadow: 0 9px 18px rgba(169,103,119,.08); }
+    .weekday { color: #816c75; border-color: #ead9d8; background: #fff; }
+    .toggle { color: #8a717b; border-color: #ead9d8; background: #fff; }
+    .toggle.on { color: #2d8a63; background: #e1f6eb; border-color: #b6e4cb; }
+    .alert-card.unread { border-color: #e4a1b4; background: #fff1f4; }
+    .alert-actions button { color: #806872; border-color: #ead9d8; background: #fff; }
+    .chat-shell { border-color: #f0d8d7; background: rgba(255,255,255,.85); box-shadow: 0 15px 32px rgba(169,103,119,.06); }
+    .assistant { color: #5e4b59; background: #fff1ee; border-color: #f1d9d7; }
+    .user { background: linear-gradient(135deg,#e77a9a,#d55c85); }
+    .composer-wrap { border-color: #f0d8d7; background: #fffaf9; }
+    .composer { border-color: #e8b7c2; background: #fff; box-shadow: 0 7px 18px rgba(169,103,119,.06); }
+    .send { background: linear-gradient(135deg,#ef7798,#d95e87); }
+    .engineer-phase { border-color: #f0dfdd; background: #fffaf9; color: #ae969c; }
+    .engineer-phase.done { border-color: #e8d5f4; background: #f6effd; color: #8966ae; }
+    .engineer-phase.active { border-color: #e18daa; background: #ffe9ef; color: #c9577c; box-shadow: 0 0 16px rgba(237,108,146,.2); }
+    .engineer-status { background: #f7e9e8; color: #8b6f77; }
+    .engineer-status.running { background: #e7edff; color: #5470bc; }
+    .engineer-status.blocked { background: #fff0d0; color: #ad7b22; }
+    .engineer-status.succeeded { background: #e1f6eb; color: #2d8a63; }
+    .drawer { background: #fffaf9; border-color: #efd8d7; }
+    .approval-card { border-color: #f0dcd9; background: #fff; }
+    .risk.external { background: #fff0d0; color: #ad7b22; }
+    .risk.dangerous { background: #ffe0e2; color: #c55862; }
+    .approve { background: #49b883; } .deny { background: #f5e9e8; color: #7b626b; }
+    .toast { border-color: #efb5c4; background: #fff0f3; color: #704a5b; }
+    .hero-actions { position: relative; z-index: 1; display: flex; gap: 8px; flex-wrap: wrap; margin-top: 17px; }
+    .suggestion-chip { border: 1px solid #efc8d0; border-radius: 999px; padding: 8px 11px; color: #9c5c73; background: rgba(255,255,255,.75); font-size: 11px; font-weight: 750; transition: transform .16s ease, background .16s ease, border-color .16s ease; }
+    .suggestion-chip:hover { transform: translateY(-2px); border-color: #e69ab1; background: #fff; }
+    @media (max-width: 760px) {
+      .sidebar { background: rgba(255,250,249,.96); border-color: #efd8d7; }
+      .view { padding: 15px 12px 28px; }
+      .hero { padding: 22px 19px; min-height: 205px; }
+      .hero h1 { max-width: 86%; }
+      .stats { gap: 8px; }
+      .stat { min-height: 84px; padding: 12px; }
+      .stat-value { margin-top: 5px; font-size: 24px; }
+      .quick-add { padding: 8px; }
+    }
+  </style>
 </head>
 <body>
 <div class="shell">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">C</div><div><h1>CherryAgent</h1><p>Office planner & tool-calling secretary</p></div></div>
+    <div class="brand"><div class="logo">C</div><div><h1>CherryAgent</h1><p>ผู้ช่วยงานที่คิดและลงมือทำ</p></div></div>
     <nav class="nav">
-      <button class="nav-button active" data-view="dashboard"><span>Dashboard</span></button>
-      <button class="nav-button" data-view="flow"><span>Flow board</span><span class="nav-count" id="flowCount">0</span></button>
-      <button class="nav-button" data-view="reminders"><span>Reminders</span><span class="nav-count" id="alertNavCount">0</span></button>
-      <button class="nav-button" data-view="engineer"><span>Engineer</span><span class="nav-count" id="engineerNavCount">0</span></button>
-      <button class="nav-button" data-view="chat"><span>Ask Cherry</span></button>
+      <button class="nav-button active" data-view="dashboard"><span>ภาพรวม</span></button>
+      <button class="nav-button" data-view="flow"><span>งานของฉัน</span><span class="nav-count" id="flowCount">0</span></button>
+      <button class="nav-button" data-view="reminders"><span>เตือนความจำ</span><span class="nav-count" id="alertNavCount">0</span></button>
+      <button class="nav-button" data-view="engineer"><span>ช่างแก้ปัญหา</span><span class="nav-count" id="engineerNavCount">0</span></button>
+      <button class="nav-button" data-view="chat"><span>คุยกับ Cherry</span></button>
     </nav>
     <div class="runtime">
       <div class="runtime-row"><span>Agent runtime</span><span class="dot" id="statusDot"></span></div>
@@ -202,7 +386,7 @@
 
   <main class="main">
     <header class="topbar">
-      <h2 id="viewTitle">Office Dashboard</h2>
+      <h2 id="viewTitle">ภาพรวมวันนี้</h2>
       <div class="top-actions">
         <button class="ghost-button notify-button" id="notifyButton"><span class="ghost-label">Browser alerts</span> <span id="notifyState">Off</span></button>
         <button class="ghost-button" id="approvalButton"><span class="ghost-label">Approvals</span><span class="approval-count" id="approvalCount">0</span></button>
@@ -211,36 +395,36 @@
 
     <section class="view active" id="view-dashboard">
       <div class="hero">
-        <div><div class="eyebrow">Cherry Office Autopilot</div><h1>Plan the work. Let Cherry run the flow.</h1><p>Today, overdue work, active flows, schedules and alerts in one place.</p></div>
+        <div><div class="eyebrow">Cherry พร้อมช่วยแล้วนะ</div><h1>วันนี้อยากให้ Cherry ช่วยอะไร?</h1><p>วางแผนงาน ตั้งเตือน หรือบอกปัญหาให้ Cherry คิดเป็นขั้นตอนแล้วลงมือทำ</p><div class="hero-actions"><button class="suggestion-chip" data-prompt="ช่วยวางแผนงานสำคัญของวันนี้ให้หน่อย สรุปเป็นลำดับที่ทำได้จริง">✦ วางแผนวันนี้</button><button class="suggestion-chip" data-prompt="สรุปสถานะระบบและงานที่ต้องรีบจัดการวันนี้ พร้อมบอกเหตุผล">♡ เช็กสิ่งที่ต้องทำ</button><button class="suggestion-chip" data-prompt="ช่วยตรวจ incident ล่าสุดแบบ Engineer Loop และบอกหลักฐานที่ต้องเก็บ">🛠 แก้ incident</button></div></div>
         <div class="date-chip" id="todayDate"></div>
       </div>
       <div class="stats">
-        <div class="stat"><div class="stat-label">Today</div><div class="stat-value" id="statToday">0</div></div>
-        <div class="stat overdue"><div class="stat-label">Overdue</div><div class="stat-value" id="statOverdue">0</div></div>
-        <div class="stat"><div class="stat-label">Doing</div><div class="stat-value" id="statDoing">0</div></div>
-        <div class="stat"><div class="stat-label">Waiting</div><div class="stat-value" id="statWaiting">0</div></div>
-        <div class="stat"><div class="stat-label">Active reminders</div><div class="stat-value" id="statReminders">0</div></div>
-        <div class="stat alerts"><div class="stat-label">Unread alerts</div><div class="stat-value" id="statAlerts">0</div></div>
+        <div class="stat"><div class="stat-label">งานวันนี้</div><div class="stat-value" id="statToday">0</div></div>
+        <div class="stat overdue"><div class="stat-label">เลยกำหนด</div><div class="stat-value" id="statOverdue">0</div></div>
+        <div class="stat"><div class="stat-label">กำลังทำ</div><div class="stat-value" id="statDoing">0</div></div>
+        <div class="stat"><div class="stat-label">กำลังรอ</div><div class="stat-value" id="statWaiting">0</div></div>
+        <div class="stat"><div class="stat-label">เตือนที่เปิดอยู่</div><div class="stat-value" id="statReminders">0</div></div>
+        <div class="stat alerts"><div class="stat-label">แจ้งเตือนใหม่</div><div class="stat-value" id="statAlerts">0</div></div>
       </div>
       <div class="grid-2">
         <div class="card">
-          <div class="card-head"><div><h3>Quick plan</h3><div class="card-sub">Add work directly to the flow board</div></div></div>
+          <div class="card-head"><div><h3>เพิ่มงานเร็ว</h3><div class="card-sub">โยนงานเข้า Flow board ได้ทันที</div></div></div>
           <form class="form-grid" id="quickPlanForm">
-            <div class="field full"><label>Task</label><input id="quickTitle" required placeholder="Prepare weekly IDC report" /></div>
-            <div class="field"><label>Priority</label><select id="quickPriority"><option>normal</option><option>high</option><option>urgent</option><option>low</option></select></div>
-            <div class="field"><label>Due</label><input id="quickDue" type="datetime-local" /></div>
-            <div class="field full"><button class="primary" type="submit">Add to plan</button></div>
+            <div class="field full"><label>งานที่ต้องทำ</label><input id="quickTitle" required placeholder="เช่น เตรียมรายงาน IDC ประจำสัปดาห์" /></div>
+            <div class="field"><label>ความสำคัญ</label><select id="quickPriority"><option>normal</option><option>high</option><option>urgent</option><option>low</option></select></div>
+            <div class="field"><label>กำหนดส่ง</label><input id="quickDue" type="datetime-local" /></div>
+            <div class="field full"><button class="primary" type="submit">เพิ่มงานเข้าแผน</button></div>
           </form>
         </div>
         <div class="card">
-          <div class="card-head"><div><h3>Today timeline</h3><div class="card-sub">Scheduled work for today</div></div><button class="secondary" data-switch="flow">Open flow</button></div>
+          <div class="card-head"><div><h3>ตารางงานวันนี้</h3><div class="card-sub">ดูงานที่ต้องเดินต่อในวันนี้</div></div><button class="secondary" data-switch="flow">เปิดบอร์ดงาน</button></div>
           <div class="timeline" id="todayTimeline"></div>
         </div>
       </div>
     </section>
 
     <section class="view" id="view-flow">
-      <div class="section-head"><div><h1>Flow board</h1><p>Drag work between stages. Dependencies, priority and timing stay attached.</p></div></div>
+      <div class="section-head"><div><h1>บอร์ดงาน</h1><p>ลากงานข้ามสถานะได้เลย รายละเอียด ความสำคัญ และกำหนดส่งจะติดไปด้วย</p></div></div>
       <form class="quick-add" id="flowAddForm">
         <input id="flowTitle" required placeholder="Add work item..." />
         <select id="flowPriority"><option>normal</option><option>high</option><option>urgent</option><option>low</option></select>
@@ -251,7 +435,7 @@
     </section>
 
     <section class="view" id="view-reminders">
-      <div class="section-head"><div><h1>Reminder center</h1><p>One-time, interval, daily, weekdays, weekly, monthly and cron schedules.</p></div><button class="secondary" id="runSchedulerButton">Run scheduler now</button></div>
+      <div class="section-head"><div><h1>เตือนความจำ</h1><p>ตั้งได้ทั้งครั้งเดียว รายวัน วันทำงาน รายสัปดาห์ รายเดือน หรือ cron</p></div><button class="secondary" id="runSchedulerButton">เช็ก scheduler ตอนนี้</button></div>
       <div class="reminder-layout">
         <div class="card">
           <div class="card-head"><div><h3>Create reminder</h3><div class="card-sub">Persistent scheduler · default timezone Asia/Bangkok</div></div></div>
@@ -305,9 +489,9 @@
     </section>
 
     <section class="view" id="view-chat">
-      <div class="chat-shell">
-        <div class="chat" id="chat"><div class="message assistant">I'm CherryAgent. Ask me to plan work, build a flow, set reminders, inspect today's schedule, read Gmail, manage Calendar and Drive, or solve technical incidents through the Engineer Loop with evidence and runbook learning.</div></div>
-        <div class="composer-wrap"><form class="composer" id="composer"><textarea id="message" rows="1" placeholder="Ask Cherry to plan, engineer, or do office work..." autocomplete="off"></textarea><button class="send" id="sendButton" aria-label="Send">↑</button></form></div>
+        <div class="chat-shell">
+        <div class="chat" id="chat"><div class="message assistant">สวัสดีครับ ผม Cherry 🍒 บอกงานหรือปัญหามาได้เลย ผมช่วยวางแผน เรียกใช้เครื่องมือ ตั้งเตือน และตรวจหลักฐานก่อนสรุปผลให้ได้ครับ</div></div>
+        <div class="composer-wrap"><form class="composer" id="composer"><textarea id="message" rows="1" placeholder="บอก Cherry ว่าอยากให้ช่วยอะไร..." autocomplete="off"></textarea><button class="send" id="sendButton" aria-label="ส่งข้อความ">↑</button></form></div>
       </div>
     </section>
 

@@ -14,11 +14,11 @@ const state = {
 };
 
 const viewTitles = {
-  dashboard: 'Office Dashboard',
-  flow: 'Flow Planner',
-  reminders: 'Reminder Center',
-  engineer: 'Engineer Loop Engine',
-  chat: 'Ask Cherry',
+  dashboard: 'ภาพรวมวันนี้',
+  flow: 'บอร์ดงานของฉัน',
+  reminders: 'เตือนความจำ',
+  engineer: 'ช่างแก้ปัญหา Engineer Loop',
+  chat: 'คุยกับ Cherry',
 };
 
 const flowColumns = [
@@ -81,6 +81,11 @@ function switchView(name) {
 
 $$('.nav-button').forEach((button) => button.addEventListener('click', () => switchView(button.dataset.view)));
 $$('[data-switch]').forEach((button) => button.addEventListener('click', () => switchView(button.dataset.switch)));
+$$('[data-prompt]').forEach((button) => button.addEventListener('click', () => {
+  switchView('chat');
+  $('#message').value = button.dataset.prompt || '';
+  $('#message').focus();
+}));
 
 async function checkHealth() {
   try {
