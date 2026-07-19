@@ -1,12 +1,12 @@
 {
-  "name": "CherryAgent — ผู้ช่วยงานของคุณ",
+  "name": "CherryAgent — AI Workforce",
   "short_name": "CherryAgent",
   "description": "ผู้ช่วยงานที่คิด วางแผน และลงมือทำผ่านเครื่องมือของคุณ",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#fff8f6",
-  "theme_color": "#fff8f6",
+  "background_color": "#f4f7ff",
+  "theme_color": "#0b6cff",
   "icons": [
     {
       "src": "/icon.svg",
