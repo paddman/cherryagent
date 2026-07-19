@@ -9,6 +9,8 @@ import { LineAdapter } from "./channels/line/LineAdapter.js";
 import type { ChannelAdapterStatus } from "./channels/types.js";
 import { config } from "./config.js";
 import { DatabaseCliHub } from "./connectors/database/DatabaseCliHub.js";
+import { BidPilotEngine } from "./connectors/documents/BidPilotEngine.js";
+import { bidPilotConfig } from "./connectors/documents/config.js";
 import { GoogleAuth } from "./connectors/google/GoogleAuth.js";
 import { GoogleWorkspaceClient } from "./connectors/google/GoogleWorkspaceClient.js";
 import { MarketIntelligenceClient } from "./connectors/market/MarketIntelligenceClient.js";
@@ -24,6 +26,7 @@ import { SchedulerEngine } from "./planner/SchedulerEngine.js";
 import { ApprovalGate } from "./safety/ApprovalGate.js";
 import { ToolRegistry } from "./tools/ToolRegistry.js";
 import { createAgenticTools } from "./tools/builtin/agentic.js";
+import { createBidPilotTools } from "./tools/builtin/bidpilot.js";
 import { createDatabaseTools } from "./tools/builtin/database.js";
 import { createEngineerTools } from "./tools/builtin/engineer.js";
 import { fileTools } from "./tools/builtin/files.js";
@@ -94,6 +97,7 @@ export async function createRuntime(): Promise<{
   const agenticStore = new AgenticStateStore(config.agentic.file);
   const evidence = new SharedEvidenceBus(agenticStore);
   const handoffs = new AgentHandoffProtocol(agenticStore);
+  const bidPilot = new BidPilotEngine(bidPilotConfig);
 
   const googleAuth = new GoogleAuth({
     ...(config.google.accessToken ? { accessToken: config.google.accessToken } : {}),
@@ -158,6 +162,7 @@ export async function createRuntime(): Promise<{
   for (const tool of [
     ...systemTools,
     ...fileTools,
+    ...createBidPilotTools(bidPilot),
     ...createOfficeTools(memory),
     ...createPlannerTools(planner),
     ...createEngineerTools(engineer),
