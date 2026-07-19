@@ -84,7 +84,7 @@ export class ObservabilityClient {
   private async prometheusRequest<T>(path: string, params: URLSearchParams = new URLSearchParams()): Promise<T> {
     if (!this.prometheusConfigured()) throw new Error("Prometheus connector is not configured");
     const url = new URL(`${this.prometheusBaseUrl}${path}`);
-    for (const [key, value] of params) url.searchParams.append(key, value);
+    params.forEach((value, key) => url.searchParams.append(key, value));
 
     const response = await jsonHttpRequest<PrometheusEnvelope<T>>(url, {
       headers: this.prometheusHeaders(),
@@ -105,7 +105,7 @@ export class ObservabilityClient {
   private async grafanaRequest<T>(path: string, params: URLSearchParams = new URLSearchParams()): Promise<T> {
     if (!this.grafanaConfigured()) throw new Error("Grafana connector is not configured");
     const url = new URL(`${this.grafanaBaseUrl}${path}`);
-    for (const [key, value] of params) url.searchParams.append(key, value);
+    params.forEach((value, key) => url.searchParams.append(key, value));
 
     const response = await jsonHttpRequest<T>(url, {
       headers: this.grafanaHeaders(),
@@ -144,7 +144,11 @@ export class ObservabilityClient {
     return await this.grafanaRequest("/api/health");
   }
 
-  async grafanaSearch(input: { query?: string; tag?: string; type?: "dash-db" | "dash-folder" } = {}): Promise<unknown> {
+  async grafanaSearch(input: {
+    query?: string | undefined;
+    tag?: string | undefined;
+    type?: "dash-db" | "dash-folder" | undefined;
+  } = {}): Promise<unknown> {
     const params = new URLSearchParams();
     if (input.query) params.set("query", input.query);
     if (input.tag) params.append("tag", input.tag);
@@ -153,10 +157,10 @@ export class ObservabilityClient {
   }
 
   async grafanaAnnotations(input: {
-    from?: number;
-    to?: number;
-    tags?: string[];
-    limit?: number;
+    from?: number | undefined;
+    to?: number | undefined;
+    tags?: string[] | undefined;
+    limit?: number | undefined;
   } = {}): Promise<unknown> {
     const params = new URLSearchParams();
     if (input.from !== undefined) params.set("from", String(input.from));
