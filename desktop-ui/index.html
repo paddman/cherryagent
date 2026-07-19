@@ -1,9 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="th">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CherryAgent — Sign in</title>
+  <meta name="theme-color" content="#fff9f1" />
+  <title>CherryAgent — เข้าสู่ workspace</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body class="login-body">
@@ -16,44 +17,45 @@
     <section class="login-layout">
       <aside class="login-copy">
         <div>
-          <h1>Your AI workspace,<br />running <span>locally.</span></h1>
-          <p class="lead">CherryAgent brings multi-agent intelligence, desktop control, and secure approvals together in one local-first workspace.</p>
+          <div class="eyebrow"><span class="eyebrow-spark">✦</span> LOCAL-FIRST AI WORKSPACE</div>
+          <h1>งานเยอะไม่เป็นไร<br /><span>ให้ Cherry จัดการ</span></h1>
+          <p class="lead">CherryAgent ไม่ได้มีไว้แค่ตอบคำถาม แต่ช่วยวางแผน เรียกทีม ลงมือผ่านเครื่องมือ และกลับมาพร้อมหลักฐานให้คุณตรวจ</p>
         </div>
 
         <div class="feature-stack">
-          <article class="feature-card"><span class="feature-icon">◎</span><div><strong>Multi-Agent Workspace</strong><p>Orchestrate specialist agents that collaborate, hand off evidence, challenge assumptions, and verify completion.</p></div></article>
-          <article class="feature-card"><span class="feature-icon">▣</span><div><strong>Desktop Control</strong><p>See the screen, interact with applications, and execute real work through controlled tools.</p></div></article>
-          <article class="feature-card"><span class="feature-icon">✓</span><div><strong>Approval Inbox</strong><p>Review risky actions before execution with visible arguments and clear auditability.</p></div></article>
-          <article class="feature-card"><span class="feature-icon">◇</span><div><strong>Local AI Ready</strong><p>Run with local models and infrastructure for privacy, sovereignty, and operational control.</p></div></article>
+          <article class="feature-card"><span class="feature-icon">✦</span><div><strong>บอกเป้าหมาย แล้ว Cherry จัดทีมให้</strong><p>Cherry เลือก agent และเครื่องมือที่เหมาะกับงานโดยอัตโนมัติ</p></div></article>
+          <article class="feature-card"><span class="feature-icon">↗</span><div><strong>ลงมือจริง พร้อมเห็นทุกขั้นตอน</strong><p>Plan → Tool → Observe → Verify ไม่ปล่อยให้คำว่า “เสร็จแล้ว” ไม่มีหลักฐาน</p></div></article>
+          <article class="feature-card"><span class="feature-icon">✓</span><div><strong>งานเสี่ยงต้องผ่านคุณก่อน</strong><p>คุณยังเป็นคนคุม approval, สิทธิ์ และ action ที่มีผลกระทบ</p></div></article>
+          <article class="feature-card"><span class="feature-icon">⌁</span><div><strong>ความจำอยู่กับ workspace ของคุณ</strong><p>Runbook, incident และบริบทการทำงานต่อเนื่องได้โดยไม่ต้องเริ่มใหม่ทุกครั้ง</p></div></article>
         </div>
 
-        <div class="security-note">◇ Enterprise-grade workflow · Your data can stay on your machine</div>
+        <div class="security-note">🍒 ข้อมูลอยู่ในเครื่องคุณ · Local Qwen พร้อมทำงาน</div>
       </aside>
 
       <section class="login-card">
         <span class="login-cherry cherry-mark" aria-hidden="true"><i></i><b></b></span>
-        <h2>Welcome <span>back</span></h2>
-        <p class="subtle center">Sign in to continue to your workspace</p>
+        <h2>กลับมาแล้วนะ <span>paddman</span></h2>
+        <p class="subtle center">Cherry รอรับงานถัดไปของคุณอยู่</p>
 
         <form id="loginForm" class="login-form">
-          <label>Email
+          <label>อีเมล
             <div class="field"><span>✉</span><input type="email" value="paddman@example.com" autocomplete="username" required /></div>
           </label>
-          <label>Password
+          <label>รหัสผ่าน
             <div class="field"><span>⌁</span><input id="password" type="password" value="cherryagent" autocomplete="current-password" required /><button type="button" id="togglePassword" class="icon-only">◉</button></div>
           </label>
 
           <div class="form-row">
-            <label class="remember"><input type="checkbox" checked /> Remember me</label>
-            <a href="#" class="pink-link">Forgot password?</a>
+            <label class="remember"><input type="checkbox" checked /> จำฉันไว้</label>
+            <a href="#" class="pink-link">ลืมรหัสผ่าน?</a>
           </div>
 
-          <button class="primary-button wide" type="submit">Sign in <span>→</span></button>
-          <div class="divider"><span>or</span></div>
-          <button class="secondary-button wide" id="localWorkspaceBtn" type="button">▣ Continue with local workspace</button>
+          <button class="primary-button wide" type="submit">เข้า workspace <span>→</span></button>
+          <div class="divider"><span>หรือ</span></div>
+          <button class="secondary-button wide" id="localWorkspaceBtn" type="button">▣ เปิด local workspace</button>
         </form>
 
-        <div class="secure-pill"><span class="dot green"></span> Secure by design. Local-first. Enterprise ready.</div>
+        <div class="secure-pill"><span class="dot green"></span> Cherry ทำงานในเครื่อง · action เสี่ยงต้องขออนุมัติ</div>
       </section>
     </section>
   </main>
