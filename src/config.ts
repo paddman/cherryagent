@@ -90,6 +90,12 @@ export const config = {
     concurrency: Math.min(8, Math.max(1, integerEnv("CHERRY_AGENTIC_CONCURRENCY", 3))),
     subAgentMaxSteps: Math.min(30, Math.max(1, integerEnv("CHERRY_SUBAGENT_MAX_STEPS", 10))),
   },
+  cognition: {
+    file: resolve(process.env.CHERRY_COGNITIVE_FILE ?? ".cherry/cognition.json"),
+    maxContextEpisodes: Math.min(50, Math.max(1, integerEnv("CHERRY_COGNITIVE_MAX_CONTEXT_EPISODES", 12))),
+    maxContextBeliefs: Math.min(100, Math.max(1, integerEnv("CHERRY_COGNITIVE_MAX_CONTEXT_BELIEFS", 20))),
+    maxContextSkills: Math.min(100, Math.max(1, integerEnv("CHERRY_COGNITIVE_MAX_CONTEXT_SKILLS", 20))),
+  },
   google: {
     accessToken: googleAccessToken,
     clientId: googleClientId,
