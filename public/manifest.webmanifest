@@ -1,12 +1,12 @@
 {
-  "name": "CherryAgent — AI Office Secretary",
+  "name": "CherryAgent — ผู้ช่วยงานของคุณ",
   "short_name": "CherryAgent",
-  "description": "Tool-calling-first AI office secretary for every device",
+  "description": "ผู้ช่วยงานที่คิด วางแผน และลงมือทำผ่านเครื่องมือของคุณ",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#09090b",
-  "theme_color": "#7c3aed",
+  "background_color": "#fff8f6",
+  "theme_color": "#fff8f6",
   "icons": [
     {
       "src": "/icon.svg",
