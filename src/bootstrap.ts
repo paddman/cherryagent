@@ -7,6 +7,8 @@ import { SharedEvidenceBus } from "./agentic/SharedEvidenceBus.js";
 import { ChannelGateway } from "./channels/ChannelGateway.js";
 import { LineAdapter } from "./channels/line/LineAdapter.js";
 import type { ChannelAdapterStatus } from "./channels/types.js";
+import { CognitiveEngine } from "./cognition/CognitiveEngine.js";
+import { CognitiveStore } from "./cognition/CognitiveStore.js";
 import { config } from "./config.js";
 import { DatabaseCliHub } from "./connectors/database/DatabaseCliHub.js";
 import { BidPilotEngine } from "./connectors/documents/BidPilotEngine.js";
@@ -27,6 +29,7 @@ import { ApprovalGate } from "./safety/ApprovalGate.js";
 import { ToolRegistry } from "./tools/ToolRegistry.js";
 import { createAgenticTools } from "./tools/builtin/agentic.js";
 import { createBidPilotTools } from "./tools/builtin/bidpilot.js";
+import { createCognitionTools } from "./tools/builtin/cognition.js";
 import { createDatabaseTools } from "./tools/builtin/database.js";
 import { createEngineerTools } from "./tools/builtin/engineer.js";
 import { fileTools } from "./tools/builtin/files.js";
@@ -79,6 +82,8 @@ export async function createRuntime(): Promise<{
   planner: PlannerStore;
   engineer: EngineerLoopEngine;
   agenticStore: AgenticStateStore;
+  cognitionStore: CognitiveStore;
+  cognition: CognitiveEngine;
   evidence: SharedEvidenceBus;
   handoffs: AgentHandoffProtocol;
   orchestrator: AgentOrchestrator;
@@ -95,6 +100,7 @@ export async function createRuntime(): Promise<{
   const planner = new PlannerStore(config.plannerFile);
   const engineer = new EngineerLoopEngine(config.engineerFile);
   const agenticStore = new AgenticStateStore(config.agentic.file);
+  const cognitionStore = new CognitiveStore(config.cognition.file);
   const evidence = new SharedEvidenceBus(agenticStore);
   const handoffs = new AgentHandoffProtocol(agenticStore);
   const bidPilot = new BidPilotEngine(bidPilotConfig);
@@ -186,6 +192,15 @@ export async function createRuntime(): Promise<{
     tools.register(tool);
   }
 
+  const cognition = new CognitiveEngine(provider, orchestrator, tools, cognitionStore, {
+    maxContextEpisodes: config.cognition.maxContextEpisodes,
+    maxContextBeliefs: config.cognition.maxContextBeliefs,
+    maxContextSkills: config.cognition.maxContextSkills,
+  });
+  for (const tool of createCognitionTools(cognition, cognitionStore)) {
+    tools.register(tool);
+  }
+
   const dispatcher = new NotificationDispatcher(google, {
     ...(config.notifications.emailTo ? { emailTo: config.notifications.emailTo } : {}),
     ...(config.notifications.slackWebhookUrl ? { slackWebhookUrl: config.notifications.slackWebhookUrl } : {}),
@@ -248,6 +263,8 @@ export async function createRuntime(): Promise<{
     planner,
     engineer,
     agenticStore,
+    cognitionStore,
+    cognition,
     evidence,
     handoffs,
     orchestrator,
