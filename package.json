@@ -20,7 +20,11 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2.8.0",
     "@types/node": "latest",
+    "@types/pg": "^8.20.0",
     "tsx": "latest",
     "typescript": "latest"
+  },
+  "dependencies": {
+    "pg": "^8.22.0"
   }
 }

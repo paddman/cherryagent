@@ -3,6 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { createRuntime } from "./bootstrap.js";
 import { config } from "./config.js";
+import { getAuditLogger, AuditLogger } from "./audit/AuditLogger.js";
 import type { EngineerLoopStatus, EngineerPhase } from "./engineer/EngineerLoopEngine.js";
 import type { PlanPriority, PlanStatus } from "./planner/PlannerStore.js";
 import type { NotificationChannel, ScheduleSpec } from "./planner/schedule.js";
@@ -10,6 +11,13 @@ import type { PendingApproval } from "./safety/ApprovalGate.js";
 
 const publicRoot = resolve(process.cwd(), "public");
 const { agent, tools, approvalGate, connectors, planner, engineer, scheduler, channelGateway } = await createRuntime();
+
+// ============================================================================
+// Audit logger singleton — ping ที่ boot เพื่อเช็คว่า PG พร้อม
+// ถ้า PG ล่ม จะ fail-soft (warn ครั้งเดียว + drop events) เพื่อไม่ให้ audit พัง app
+// ============================================================================
+const audit: AuditLogger = getAuditLogger();
+await audit.ping();
 
 const planStatuses: PlanStatus[] = ["inbox", "planned", "doing", "waiting", "done", "cancelled"];
 const priorities: PlanPriority[] = ["low", "normal", "high", "urgent"];
@@ -198,6 +206,53 @@ function publicApproval(item: PendingApproval): Record<string, unknown> {
 }
 
 const server = createServer(async (req, res) => {
+  // ===== HTTP audit: จับ method/path/status/duration ของทุก request =====
+  const requestStart = Date.now();
+  const traceId = AuditLogger.newTraceId();
+  const fwdFor = req.headers["x-forwarded-for"];
+  const cfIp = req.headers["cf-connecting-ip"];
+  const fwdForStr = typeof fwdFor === "string" ? (fwdFor.split(",")[0] ?? "").trim() : undefined;
+  const cfIpStr = typeof cfIp === "string" ? cfIp : undefined;
+  const clientIp: string | undefined = fwdForStr || cfIpStr || req.socket.remoteAddress || undefined;
+  // attach traceId เพื่อให้ tool_call audit สามารถ correlate กับ http_request ได้
+  (req as IncomingMessage & { traceId?: string }).traceId = traceId;
+
+  // wrap res.end เพื่อจับ status code (call original ก่อน, แล้ว audit หลัง response)
+  const originalEnd = res.end.bind(res);
+  let responseStatus = 0;
+  const wrappedEnd: typeof res.end = (chunk?: any, encoding?: any, callback?: any) => {
+    responseStatus = res.statusCode;
+    // call original first แล้วค่อย audit (non-blocking)
+    const result = encoding === undefined && callback === undefined
+      ? (originalEnd as any)(chunk)
+      : (originalEnd as any)(chunk, encoding, callback);
+    return result;
+  };
+  res.end = wrappedEnd as typeof res.end;
+
+  // hook 'close' event — audit ทุก request หลัง response ปิด (ทั้งปกติและ abort)
+  res.on("close", () => {
+    // skip noise: OPTIONS preflight (static assets ยัง log เพื่อ debug)
+    if (req.method === "OPTIONS") return;
+    const isStaticAsset =
+      req.method === "GET" &&
+      /\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|map)$/i.test(req.url ?? "");
+
+    // build event object แบบ conditional (exactOptionalPropertyTypes compliant)
+    const event: import("./audit/AuditLogger.js").AuditEvent = {
+      action: "http_request",
+      traceId,
+      method: req.method ?? "UNKNOWN",
+      path: (req.url ?? "/").split("?")[0] ?? "/",
+      resultStatus: String(responseStatus || "unknown"),
+      durationMs: Date.now() - requestStart,
+      metadata: isStaticAsset ? { static: true } : {},
+    };
+    if (clientIp) event.ip = clientIp;
+
+    audit.log(event);
+  });
+
   try {
     const url = new URL(req.url ?? "/", "http://localhost");
     const pathname = url.pathname;
