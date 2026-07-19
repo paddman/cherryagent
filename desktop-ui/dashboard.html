@@ -1,98 +1,172 @@
 <!doctype html>
-<html lang="en">
+<html lang="th">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CherryAgent — Workspace</title>
+  <meta name="theme-color" content="#fff9f1" />
+  <title>CherryAgent — ห้องทำงานของ Cherry</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body class="dashboard-body">
   <main class="app-window">
     <header class="topbar">
-      <div class="brand brand-cell"><span class="cherry-mark" aria-hidden="true"><i></i><b></b></span><span><strong>Cherry</strong>Agent</span></div>
-      <div class="status-cluster">
-        <span class="pill"><span class="dot green"></span><strong id="backendStatus">Checking...</strong></span>
-        <span class="pill"><span class="desktop-glyph">▣</span><strong id="bridgeStatus">Checking desktop...</strong></span>
-        <span class="pill approval-pill"><span class="dot pink"></span><strong><span id="approvalCount">0</span> Approvals</strong></span>
+      <div class="brand brand-cell">
+        <span class="cherry-mark" aria-hidden="true"><i></i><b></b></span>
+        <span><strong>Cherry</strong>Agent</span>
       </div>
-      <label class="search-box"><span>⌕</span><input placeholder="Search anything..." /><kbd>Ctrl + K</kbd></label>
-      <div class="profile"><span class="avatar">P</span><strong>Paddman</strong><span>⌄</span><button id="quitBtn" class="icon-only" title="Quit CherryAgent">⚙</button></div>
+      <div class="workspace-crumb">
+        <span class="crumb-muted">Workspace</span>
+        <span class="crumb-slash">/</span>
+        <strong>ห้องทำงานของ paddman</strong>
+      </div>
+      <div class="status-cluster">
+        <span class="runtime-status"><span class="dot green"></span><strong id="backendStatus">Local Qwen online</strong></span>
+        <span class="runtime-status bridge-status"><span class="dot blue"></span><strong id="bridgeStatus">Desktop พร้อม</strong></span>
+      </div>
+      <div class="top-actions">
+        <button class="top-icon" title="ค้นหา">⌕</button>
+        <button class="top-icon has-dot" title="การแจ้งเตือน">♧</button>
+        <div class="profile"><span class="avatar">P</span><span class="profile-name">paddman</span></div>
+        <button id="quitBtn" class="top-icon" title="ปิด CherryAgent">⋯</button>
+      </div>
     </header>
 
     <div class="app-grid">
-      <nav class="sidebar">
-        <div class="nav-group">
-          <button class="nav-item active"><span>◌</span>Chat</button>
-          <button class="nav-item"><span>☑</span>Tasks</button>
-          <button class="nav-item"><span>♧</span>Agents</button>
-          <button class="nav-item"><span>▣</span>Desktop</button>
-          <button class="nav-item"><span>◇</span>Security</button>
-          <button class="nav-item"><span>◎</span>Memory</button>
+      <nav class="sidebar" aria-label="เมนู CherryAgent">
+        <div>
+          <div class="workspace-card">
+            <div class="workspace-orb">P</div>
+            <div><strong>Paddman Ops</strong><small>พื้นที่ส่วนตัว</small></div>
+            <span class="chevron">⌄</span>
+          </div>
+
+          <div class="nav-label">CHERRY WORKSPACE</div>
+          <div class="nav-group">
+            <button class="nav-item active"><span class="nav-icon cherry-mini">✦</span><span><strong>ศูนย์บัญชาการ</strong><small>คุยกับ Cherry</small></span></button>
+            <button class="nav-item"><span class="nav-icon">▦</span><span><strong>งานของฉัน</strong><small>ดูงานทั้งหมด</small></span></button>
+            <button class="nav-item"><span class="nav-icon">♢</span><span><strong>ทีม Cherry</strong><small>ผู้ช่วย 10 ตัว</small></span></button>
+            <button class="nav-item"><span class="nav-icon">◷</span><span><strong>ตารางเวลา</strong><small>สิ่งที่ต้องทำต่อ</small></span></button>
+            <button class="nav-item"><span class="nav-icon">✓</span><span><strong>การอนุมัติ</strong><small>รอการตัดสินใจ</small></span><b class="count-badge" id="sidebarApprovalCount">0</b></button>
+            <button class="nav-item"><span class="nav-icon">↗</span><span><strong>Runbooks</strong><small>สิ่งที่ Cherry เรียนรู้</small></span></button>
+          </div>
         </div>
+
         <div class="sidebar-bottom">
-          <button class="nav-item"><span>◇</span>Approvals <b class="count-badge" id="sidebarApprovalCount">0</b></button>
-          <button class="nav-item"><span>⚙</span>Settings</button>
+          <div class="local-card">
+            <span class="local-cherry">✦</span>
+            <div><strong>Cherry อยู่ตรงนี้</strong><small>ข้อมูลเก็บในเครื่องคุณ</small></div>
+            <span class="online-dot"></span>
+          </div>
+          <button class="nav-item settings-item"><span class="nav-icon">⚙</span><span><strong>ตั้งค่า</strong><small>การเชื่อมต่อและความปลอดภัย</small></span></button>
         </div>
       </nav>
 
       <section class="workspace-panel">
-        <div class="hero">
-          <span class="hero-cherry cherry-mark" aria-hidden="true"><i></i><b></b></span>
-          <h1>Cherry</h1>
-          <p>What are we doing today?</p>
-        </div>
-
-        <section id="messages" class="messages modern-messages">
-          <article class="message assistant">
-            <div class="bubble">Cherry is ready. Ask me to investigate, coordinate sub-agents, use tools, or request approval before a risky action.</div>
-          </article>
+        <section class="welcome-strip">
+          <div class="welcome-copy">
+            <div class="eyebrow"><span class="eyebrow-spark">✦</span> CHERRY IS READY</div>
+            <h1>วันนี้ให้ Cherry<br /><em>จัดการอะไรให้ดี?</em></h1>
+            <p>บอกเป้าหมายมาได้เลย Cherry จะวางแผน ลงมือ และกลับมาพร้อมหลักฐานให้คุณตรวจ</p>
+          </div>
+          <div class="cherry-hello" aria-hidden="true">
+            <div class="hello-orbit orbit-one"></div>
+            <div class="hello-orbit orbit-two"></div>
+            <span class="hello-leaf">⌁</span>
+            <span class="hello-berry berry-one"></span>
+            <span class="hello-berry berry-two"></span>
+            <span class="hello-face">•ᴗ•</span>
+            <span class="hello-spark spark-one">✦</span>
+            <span class="hello-spark spark-two">·</span>
+          </div>
         </section>
 
-        <form id="chatForm" class="composer-box">
-          <textarea id="messageInput" rows="3" placeholder="Ask Cherry anything..."></textarea>
-          <div class="composer-actions">
-            <div class="composer-left"><button type="button" class="icon-button">⌕</button><button type="button" class="icon-button">◎</button><button type="button" class="icon-button">☷</button></div>
-            <div class="composer-right"><button type="button" class="mode-button">Smart Plan⌄</button><button id="sendBtn" type="submit" class="send-button">➤</button></div>
+        <section class="quick-start">
+          <div class="section-kicker">เริ่มงานเร็ว ๆ</div>
+          <div class="quick-row">
+            <button data-prompt="ช่วยสรุปสถานะระบบทั้งหมด แล้วบอกสิ่งที่ต้องจัดการก่อน"><span>◌</span> เช็กระบบให้หน่อย</button>
+            <button data-prompt="เปิดรายการ approval ที่รออยู่ พร้อมอธิบายความเสี่ยงแต่ละรายการ"><span>✓</span> ดูสิ่งที่รออนุมัติ</button>
+            <button data-prompt="ช่วยวางแผนงานวันนี้ โดยเรียงตามความเร่งด่วนและเวลาที่มี"><span>☼</span> วางแผนวันนี้</button>
+            <button data-prompt="ค้นหา incident หรือ runbook ที่เกี่ยวข้องกับปัญหานี้"><span>↗</span> ค้นจากความจำ</button>
           </div>
-        </form>
+        </section>
+
+        <section class="ask-card">
+          <div class="ask-header">
+            <div class="ask-title">
+              <span class="ask-avatar">C</span>
+              <div><strong>คุยกับ Cherry</strong><small>ผู้ช่วยหลัก · เรียกทีมและเครื่องมือให้เอง</small></div>
+            </div>
+            <span class="ready-pill"><span class="dot green"></span>พร้อมลงมือ</span>
+          </div>
+
+          <section id="messages" class="messages modern-messages">
+            <article class="message assistant">
+              <div class="bubble">สวัสดี paddman 🍒<br />วันนี้อยากให้ Cherry ช่วยเรื่องไหน? บอกเป็นเป้าหมายสั้น ๆ ก็พอ เดี๋ยว Cherry จัดคน จัดเครื่องมือ และสรุปหลักฐานกลับมาให้เอง</div>
+              <small>Cherry · พร้อมฟังงาน</small>
+            </article>
+          </section>
+
+          <form id="chatForm" class="composer-box">
+            <textarea id="messageInput" rows="2" placeholder="เช่น “ช่วยตรวจ HTTP 524 แล้วแก้ให้ พร้อมบันทึกเป็น Runbook”"></textarea>
+            <div class="composer-actions">
+              <div class="composer-hint"><span class="hint-key">Enter</span> ส่งให้ Cherry <span class="hint-separator">·</span> Shift + Enter ขึ้นบรรทัดใหม่</div>
+              <div class="composer-right"><button type="button" class="mode-button">Cherry วางแผนให้ ⌄</button><button id="sendBtn" type="submit" class="send-button">ส่งงาน <span>↗</span></button></div>
+            </div>
+          </form>
+        </section>
+
+        <section class="mission-card">
+          <div class="mission-heading">
+            <div><div class="section-kicker">CHERRY กำลังทำงานอยู่</div><h2>ภารกิจล่าสุดของ Cherry</h2></div>
+            <button class="text-button">เปิดรายละเอียด ↗</button>
+          </div>
+          <div class="mission-body">
+            <div class="mission-icon">↗</div>
+            <div class="mission-copy"><strong>แก้ปัญหา HTTP 524 ของ Trading Journal</strong><p>Cherry กำลังตรวจ proxy → upstream → health check และจะยังไม่บอกว่าสำเร็จจนกว่าจะมีหลักฐานยืนยัน</p><div class="mission-meta"><span class="agent-chip"><i class="agent-dot forge-dot"></i>Forge กำลังลงมือ</span><span>เริ่มเมื่อ 14:02</span></div></div>
+            <div class="mission-progress"><strong>74%</strong><div class="progress"><i style="width:74%"></i></div><small>กำลังตรวจสอบ</small></div>
+          </div>
+          <div class="trace">
+            <div class="trace-step done"><span>✓</span><strong>วางแผน</strong></div><div class="trace-line done"></div>
+            <div class="trace-step active"><span>✦</span><strong>ลงมือ</strong></div><div class="trace-line"></div>
+            <div class="trace-step"><span>○</span><strong>ตรวจหลักฐาน</strong></div>
+          </div>
+        </section>
 
         <section class="recent-section">
-          <div class="section-heading"><h2>Recent Work</h2><a href="#">View all ›</a></div>
+          <div class="section-heading"><div><div class="section-kicker">WORKSPACE MEMORY</div><h2>งานที่ Cherry ดูแลอยู่</h2></div><button class="text-button">ดูทั้งหมด ↗</button></div>
           <div class="task-grid">
-            <article class="task-card"><div class="task-head"><span class="task-icon">▤</span><div><strong>Fix DC18 storage issue</strong><small>Atlas · infra</small></div></div><p>Investigate queue depth and storage latency with evidence before remediation.</p><div class="task-foot"><span class="tag working">● Working</span><span class="progress"><i style="width:65%"></i></span><b>65%</b></div></article>
-            <article class="task-card"><div class="task-head"><span class="task-icon">▣</span><div><strong>Analyze current screen</strong><small>Iris · research</small></div></div><p>Capture and interpret the current desktop state and visible errors.</p><div class="task-foot"><span class="tag working">● Running</span><span class="progress"><i style="width:40%"></i></span><b>40%</b></div></article>
-            <article class="task-card"><div class="task-head"><span class="task-icon">◇</span><div><strong>Review pending approvals</strong><small>Vera · verifier</small></div></div><p>Summarize pending actions and verify risk before execution.</p><div class="task-foot"><span class="tag waiting">● Waiting</span><span></span><b><span id="summaryPending">0</span> items</b></div></article>
-          </div>
-        </section>
-
-        <section class="suggestion-section">
-          <h2>Try asking Cherry</h2>
-          <div class="suggestion-row">
-            <button data-prompt="Summarize current system health and tell me what needs attention.">♧ Summarize system health</button>
-            <button data-prompt="Show pending approvals and explain risk before I approve anything.">◇ Show pending approvals</button>
-            <button data-prompt="Find large files on DC18 and report the biggest space consumers without deleting anything.">▣ Find large files on DC18</button>
-            <button data-prompt="Check security alerts, prioritize them, and show evidence for the highest-risk findings.">◇ Check security alerts</button>
+            <article class="task-card task-warm"><div class="task-card-top"><span class="task-icon">▤</span><span class="task-status active-status">กำลังทำ</span></div><strong>ตรวจ DC18 storage</strong><p>Atlas กำลังเก็บ metrics ก่อนเสนอวิธีแก้ที่ปลอดภัย</p><div class="task-foot"><span>Atlas · Infra</span><span class="mini-progress"><i style="width:65%"></i></span><b>65%</b></div></article>
+            <article class="task-card task-blue"><div class="task-card-top"><span class="task-icon">◉</span><span class="task-status blue-status">กำลังอ่าน</span></div><strong>วิเคราะห์หน้าจอปัจจุบัน</strong><p>Iris กำลังอ่านภาพและจับคู่กับบริบทที่ Cherry จำไว้</p><div class="task-foot"><span>Iris · Research</span><span class="mini-progress"><i style="width:40%"></i></span><b>40%</b></div></article>
+            <article class="task-card task-lilac"><div class="task-card-top"><span class="task-icon">✓</span><span class="task-status wait-status">รอคุณ</span></div><strong>ตรวจรายการอนุมัติ</strong><p>Vera พบ action ที่ต้องให้คุณตัดสินใจก่อนส่งออกไป</p><div class="task-foot"><span>Vera · Verify</span><b><span id="summaryPending">0</span> รายการ</b></div></article>
           </div>
         </section>
       </section>
 
       <aside class="activity-column">
-        <section class="activity-card">
-          <div class="section-heading"><h2>⌁ Live Activity</h2><button class="small-filter">All Agents⌄</button></div>
-          <div class="agent-feed">
-            <article class="agent-row"><span class="agent-avatar atlas">A</span><div class="agent-copy"><div class="agent-title"><strong>Atlas</strong><span class="tag working">Working</span><time>infra</time></div><p>Investigating storage latency on DC18</p><small>Collecting disk performance metrics...</small><div class="progress long"><i style="width:65%"></i></div></div></article>
-            <article class="agent-row"><span class="agent-avatar forge">F</span><div class="agent-copy"><div class="agent-title"><strong>Forge</strong><span class="tag working">Running</span><time>engineer</time></div><p>Preparing safe remediation steps</p><small>Patch, test, verify, then record runbook...</small><div class="progress long"><i style="width:70%"></i></div></div></article>
-            <article class="agent-row"><span class="agent-avatar iris">I</span><div class="agent-copy"><div class="agent-title"><strong>Iris</strong><span class="tag working">Researching</span><time>research</time></div><p>Analyzing current evidence</p><small>Cross-checking facts and context...</small><div class="progress long"><i style="width:40%"></i></div></div></article>
-            <article class="agent-row"><span class="agent-avatar raven">R</span><div class="agent-copy"><div class="agent-title"><strong>Raven</strong><span class="tag idle">Critic</span><time>critic</time></div><p>Challenging assumptions</p><small>Looking for missing evidence and hidden risk.</small></div></article>
-            <article class="agent-row"><span class="agent-avatar vera">V</span><div class="agent-copy"><div class="agent-title"><strong>Vera</strong><span class="tag waiting">Waiting</span><time>verifier</time></div><p>Waiting for independent verification</p><small>Completion requires observable evidence.</small></div></article>
-          </div>
+        <section class="approval-summary">
+          <div class="side-heading"><div><div class="section-kicker">NEEDS YOUR HAND</div><h2>รอคุณตัดสินใจ</h2></div><span class="approval-orb">!</span></div>
+          <p class="side-intro">Cherry ทำต่อได้ทันทีเมื่อคุณอนุมัติ action ที่มีความเสี่ยง</p>
+          <div class="approval-count-line"><strong id="approvalSummaryCount">0</strong><span>รายการรออนุมัติ</span><button id="refreshApprovals" class="refresh-button">↻</button></div>
+          <div id="approvals" class="approval-list modern-approvals"><p class="empty-approval">ยังไม่มีอะไรให้คุณปวดหัว 🍒<br /><small>Cherry จะเรียกเมื่อจำเป็นเท่านั้น</small></p></div>
+          <span id="configPath" hidden></span>
         </section>
 
-        <section class="approval-summary">
-          <div class="section-heading"><h2>Approval Inbox</h2><button id="refreshApprovals" class="small-filter">Refresh</button></div>
-          <div class="stats"><div><strong class="pink" id="approvalSummaryCount">0</strong><span>Pending</span></div><div><strong>0</strong><span>Overdue</span></div><div><strong class="green">8</strong><span>Approved</span></div><div><strong>24h</strong><span>Window</span></div></div>
-          <div id="approvals" class="approval-list modern-approvals"></div>
-          <span id="configPath" hidden></span>
+        <section class="activity-card">
+          <div class="side-heading"><div><div class="section-kicker">CHERRY SQUAD</div><h2>ทีมของ Cherry</h2></div><button class="circle-button">↗</button></div>
+          <p class="side-intro">Cherry เรียกคนที่เหมาะกับงาน แล้วให้ทุกคนส่งหลักฐานกลับมา</p>
+          <div class="agent-feed">
+            <article class="agent-row"><span class="agent-avatar atlas">A</span><div class="agent-copy"><div class="agent-title"><strong>Atlas</strong><span class="role">Infra</span><span class="online-dot"></span></div><p>ดูแลระบบและเครื่องเซิร์ฟเวอร์</p></div><span class="agent-state">กำลังทำ</span></article>
+            <article class="agent-row"><span class="agent-avatar forge">F</span><div class="agent-copy"><div class="agent-title"><strong>Forge</strong><span class="role">Engineer</span><span class="online-dot"></span></div><p>แก้ปัญหา ทดสอบ และพิสูจน์ผล</p></div><span class="agent-state">กำลังทำ</span></article>
+            <article class="agent-row"><span class="agent-avatar iris">I</span><div class="agent-copy"><div class="agent-title"><strong>Iris</strong><span class="role">Research</span><span class="online-dot"></span></div><p>ค้นข้อมูล อ่านภาพ และจับบริบท</p></div><span class="agent-state">กำลังอ่าน</span></article>
+            <article class="agent-row"><span class="agent-avatar raven">R</span><div class="agent-copy"><div class="agent-title"><strong>Raven</strong><span class="role">Critic</span><span class="online-dot idle-dot"></span></div><p>คอยทักเมื่อแผนยังมีช่องโหว่</p></div><span class="agent-state muted-state">พร้อม</span></article>
+            <article class="agent-row"><span class="agent-avatar vera">V</span><div class="agent-copy"><div class="agent-title"><strong>Vera</strong><span class="role">Verify</span><span class="online-dot"></span></div><p>ตรวจหลักฐานก่อน Cherry บอกว่าเสร็จ</p></div><span class="agent-state">รอคุณ</span></article>
+          </div>
+          <button class="squad-link">ดูทีมทั้งหมด 10 ตัว <span>→</span></button>
+        </section>
+
+        <section class="memory-card">
+          <div class="memory-icon">✦</div>
+          <div><div class="section-kicker">CHERRY REMEMBERS</div><h3>ความจำที่ช่วยให้ทำงานต่อเนื่อง</h3><p>Incident, Runbook, คนรับผิดชอบ และสิ่งที่เคยตัดสินใจ — อยู่ใน workspace ของคุณ</p><div class="memory-tags"><span>Working</span><span>Incident</span><span>Runbook</span></div></div>
         </section>
       </aside>
     </div>
