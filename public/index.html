@@ -327,11 +327,15 @@
     <section class="view" id="view-chat">
       <div class="chat-shell">
         <div class="chat-toolbar">
-          <div>
+          <div class="chat-session-identity">
             <strong>Chat session</strong>
             <span id="chatIdentity">Chat ID: —</span>
           </div>
-          <button class="ghost-button" id="newChatButton" type="button">แชตใหม่</button>
+          <div class="chat-toolbar-actions">
+            <span class="ssh-connection-pill" id="sshConnectionStatus">SSH: ยังไม่ได้ล็อกอิน</span>
+            <button class="ghost-button" id="sshLoginButton" type="button">SSH Login</button>
+            <button class="ghost-button" id="newChatButton" type="button">แชตใหม่</button>
+          </div>
         </div>
         <div class="chat" id="chat"><div class="message assistant">Cherry พร้อมค่ะ ส่งงานหรือปัญหามาได้เลย เดี๋ยวเชอรี่ลงมือผ่านเครื่องมือ ตรวจผล แล้วสรุปหลักฐานให้ตรง ๆ นะคะ</div></div>
         <div class="composer-wrap"><form class="composer" id="composer"><textarea id="message" rows="1" placeholder="บอก Cherry ว่าอยากให้ช่วยอะไร..." autocomplete="off"></textarea><button class="send" id="sendButton" aria-label="ส่งข้อความ">↑</button></form></div>
@@ -345,6 +349,32 @@
   </main>
 </div>
 <div class="toast-stack" id="toastStack"></div>
+<dialog class="ssh-login-dialog" id="sshLoginDialog">
+  <div class="ssh-login-head">
+    <div><div class="eyebrow">SECURE SERVER ACCESS</div><h2>ล็อกอิน SSH ให้ Cherry</h2><p>credential จะส่งตรงเข้า connector และไม่ถูกส่งเข้าโมเดลหรือเก็บใน chat log</p></div>
+    <button class="ghost-button" id="sshLoginClose" type="button" aria-label="ปิด">×</button>
+  </div>
+  <div class="ssh-login-flow" aria-label="SSH login flow">
+    <div class="ssh-login-node active" data-ssh-step="profile"><i>1</i><span>Server profile</span></div>
+    <div class="ssh-login-node" data-ssh-step="fingerprint"><i>2</i><span>Host fingerprint</span></div>
+    <div class="ssh-login-node" data-ssh-step="authenticate"><i>3</i><span>Authenticate</span></div>
+    <div class="ssh-login-node" data-ssh-step="ready"><i>4</i><span>Agent ready</span></div>
+  </div>
+  <form class="ssh-login-form" id="sshLoginForm">
+    <div class="field"><label>Host</label><input id="sshHost" required placeholder="server.example.com" autocapitalize="off" spellcheck="false" /></div>
+    <div class="field"><label>Port</label><input id="sshPort" required type="number" min="1" max="65535" value="22" /></div>
+    <div class="field"><label>Username</label><input id="sshUsername" required placeholder="ubuntu" autocapitalize="off" spellcheck="false" /></div>
+    <div class="field"><label>Authentication</label><select id="sshAuthentication"><option value="private-key">Private key</option><option value="password">Password</option><option value="ssh-agent">SSH agent</option></select></div>
+    <div class="field full ssh-private-key-field"><label>Private key</label><input id="sshPrivateKeyFile" type="file" accept=".pem,.key,text/plain" /><textarea id="sshPrivateKey" rows="5" autocomplete="off" spellcheck="false" placeholder="วาง private key หรือเลือกไฟล์ — ค่านี้ไม่เข้า chat"></textarea></div>
+    <div class="field full ssh-password-field" hidden><label>Password</label><input id="sshPassword" type="password" autocomplete="new-password" placeholder="SSH password — ค่านี้ไม่เข้า chat" /></div>
+    <div class="field full">
+      <button class="secondary" id="sshScanButton" type="button">1. อ่าน Host Fingerprint</button>
+      <div class="ssh-fingerprint" id="sshFingerprint" hidden><span>Fingerprint ที่เครื่องปลายทางส่งมา</span><strong id="sshFingerprintValue">—</strong><small id="sshKeyType">—</small><label><input id="sshFingerprintConfirm" type="checkbox" /> ฉันตรวจสอบและยืนยัน fingerprint นี้แล้ว</label></div>
+    </div>
+    <div class="ssh-login-result full" id="sshLoginResult">กรอก server profile แล้วอ่าน fingerprint ก่อนล็อกอิน</div>
+    <div class="ssh-login-actions full"><button class="ghost-button" id="sshLoginCancel" type="button">ยกเลิก</button><button class="primary" id="sshConnectButton" type="submit">2. Login &amp; Save Profile</button></div>
+  </form>
+</dialog>
 <div class="auth-overlay" id="authOverlay" hidden>
   <section class="auth-card" aria-labelledby="authTitle">
     <div class="eyebrow">CHERRY WORKSPACE</div>
@@ -358,7 +388,7 @@
     </form>
   </section>
 </div>
-<script type="module" src="/app.js?v=chat-flow-2"></script>
+<script type="module" src="/app.js?v=ssh-login-1"></script>
 <script type="module" src="/chat-trace.js?v=chat-flow-1"></script>
 </body>
 </html>

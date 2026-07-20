@@ -185,6 +185,10 @@ export const config = {
     file: resolve(process.env.CHERRY_CHAT_LOG_FILE ?? ".cherry/chat-logs.json"),
     maxEntries: Math.max(100, integerEnv("CHERRY_CHAT_LOG_MAX_ENTRIES", 10_000)),
   },
+  linuxSsh: {
+    profileFile: resolve(process.env.CHERRY_LINUX_SSH_PROFILE_FILE ?? ".cherry/ssh/profile.json"),
+    keyDirectory: resolve(process.env.CHERRY_LINUX_SSH_KEY_DIRECTORY ?? ".cherry/ssh"),
+  },
   scheduler: {
     intervalMs: Math.max(1_000, integerEnv("CHERRY_SCHEDULER_INTERVAL_MS", 15_000)),
   },

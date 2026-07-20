@@ -19,6 +19,8 @@ const state = {
   reportStreamAbort: null,
   reportStreamId: null,
   reportPollTimer: null,
+  sshHostKey: null,
+  sshStatus: null,
   engineerDashboard: null,
   approvals: [],
   deployRuns: [],
@@ -193,6 +195,7 @@ async function checkHealth() {
   try {
     const data = await api('/health');
     state.connectors = data.connectors || {};
+    renderSshStatus(data.linuxSsh ? { ...(state.sshStatus || {}), ...data.linuxSsh } : null);
     $('#statusText').textContent = `${data.model} · ${data.tools} tools`;
     $('#connectorStatus').textContent = `Google Workspace: ${data.connectors?.google ? 'connected' : 'not configured'}`;
     $('#schedulerStatus').textContent = `Scheduler: ${data.planner?.schedulerRunning ? 'running' : 'stopped'} · ${Math.round((data.planner?.schedulerIntervalMs || 0) / 1000)}s`;
@@ -1918,6 +1921,170 @@ function addMessage(text, role, meta = '') {
   $('#chat').scrollTop = $('#chat').scrollHeight;
   return node;
 }
+
+function setSshFlow(activeStep, failed = false) {
+  const steps = ['profile', 'fingerprint', 'authenticate', 'ready'];
+  const activeIndex = steps.indexOf(activeStep);
+  $$('.ssh-login-node').forEach((node) => {
+    const index = steps.indexOf(node.dataset.sshStep);
+    node.classList.toggle('done', activeIndex >= 0 && index < activeIndex);
+    node.classList.toggle('active', index === activeIndex && !failed);
+    node.classList.toggle('failed', index === activeIndex && failed);
+  });
+}
+
+function renderSshStatus(status) {
+  state.sshStatus = status;
+  const node = $('#sshConnectionStatus');
+  if (!node) return;
+  const target = status?.host ? `${status.username ? `${status.username}@` : ''}${status.host}` : '';
+  if (status?.ready) {
+    node.textContent = `SSH: ล็อกอินแล้ว · ${target}`;
+    node.classList.add('ready');
+  } else {
+    node.textContent = target ? `SSH: ต้อง Login · ${target}` : 'SSH: ยังไม่ได้ตั้งค่า';
+    node.classList.remove('ready');
+  }
+}
+
+function updateSshAuthenticationFields() {
+  const authentication = $('#sshAuthentication').value;
+  $('.ssh-private-key-field').hidden = authentication !== 'private-key';
+  $('.ssh-password-field').hidden = authentication !== 'password';
+}
+
+function resetSshHostKey() {
+  state.sshHostKey = null;
+  $('#sshFingerprint').hidden = true;
+  $('#sshFingerprintConfirm').checked = false;
+  $('#sshFingerprintValue').textContent = '—';
+  $('#sshKeyType').textContent = '—';
+  $('#sshLoginResult').className = 'ssh-login-result full';
+  $('#sshLoginResult').textContent = 'อ่าน fingerprint ใหม่ก่อนล็อกอิน';
+  setSshFlow('fingerprint');
+}
+
+async function openSshLogin() {
+  const dialog = $('#sshLoginDialog');
+  try {
+    const data = await api('/linux/ssh');
+    const status = data.status || {};
+    renderSshStatus(status);
+    $('#sshHost').value = status.host || '';
+    $('#sshPort').value = String(status.port || 22);
+    $('#sshUsername').value = status.username || '';
+    $('#sshAuthentication').value = ['private-key', 'password', 'ssh-agent'].includes(status.authentication)
+      ? status.authentication
+      : 'private-key';
+    $('#sshPrivateKey').value = '';
+    $('#sshPrivateKeyFile').value = '';
+    $('#sshPassword').value = '';
+    state.sshHostKey = null;
+    $('#sshFingerprint').hidden = true;
+    $('#sshFingerprintConfirm').checked = false;
+    $('#sshLoginResult').className = `ssh-login-result full${status.ready ? ' success' : ''}`;
+    $('#sshLoginResult').textContent = status.ready
+      ? `Profile นี้ยืนยัน login สำเร็จล่าสุด ${formatDateTime(status.lastVerifiedAt)}`
+      : 'กรอก server profile แล้วอ่าน fingerprint ก่อนล็อกอิน';
+    updateSshAuthenticationFields();
+    setSshFlow(status.ready ? 'ready' : 'profile');
+    dialog.showModal();
+  } catch (error) {
+    toast(`เปิด SSH Login ไม่ได้: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+$('#sshLoginButton').addEventListener('click', () => void openSshLogin());
+$('#sshLoginClose').addEventListener('click', () => $('#sshLoginDialog').close());
+$('#sshLoginCancel').addEventListener('click', () => $('#sshLoginDialog').close());
+$('#sshAuthentication').addEventListener('change', updateSshAuthenticationFields);
+$('#sshHost').addEventListener('input', resetSshHostKey);
+$('#sshPort').addEventListener('input', resetSshHostKey);
+$('#sshPrivateKeyFile').addEventListener('change', async () => {
+  const file = $('#sshPrivateKeyFile').files?.[0];
+  if (!file) return;
+  if (file.size > 128000) {
+    toast('ไฟล์ private key ใหญ่เกิน 128 KB');
+    $('#sshPrivateKeyFile').value = '';
+    return;
+  }
+  $('#sshPrivateKey').value = await file.text();
+});
+$('#sshFingerprintConfirm').addEventListener('change', () => {
+  setSshFlow($('#sshFingerprintConfirm').checked ? 'authenticate' : 'fingerprint');
+});
+
+$('#sshScanButton').addEventListener('click', async () => {
+  const button = $('#sshScanButton');
+  button.disabled = true;
+  $('#sshLoginResult').className = 'ssh-login-result full';
+  $('#sshLoginResult').textContent = 'กำลังอ่าน public host key จากเครื่องปลายทาง…';
+  setSshFlow('fingerprint');
+  try {
+    const data = await api('/linux/ssh/scan', {
+      method: 'POST',
+      body: JSON.stringify({ host: $('#sshHost').value.trim(), port: Number($('#sshPort').value) }),
+    });
+    state.sshHostKey = data.hostKey;
+    $('#sshFingerprint').hidden = false;
+    $('#sshFingerprintValue').textContent = data.hostKey.fingerprint;
+    $('#sshKeyType').textContent = `${data.hostKey.keyType} · ${data.hostKey.host}:${data.hostKey.port}`;
+    $('#sshFingerprintConfirm').checked = false;
+    $('#sshLoginResult').textContent = 'เทียบ fingerprint กับข้อมูลจากผู้ดูแลเครื่อง แล้วกดยืนยัน';
+  } catch (error) {
+    state.sshHostKey = null;
+    $('#sshLoginResult').className = 'ssh-login-result full error';
+    $('#sshLoginResult').textContent = error instanceof Error ? error.message : String(error);
+    setSshFlow('fingerprint', true);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$('#sshLoginForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const resultNode = $('#sshLoginResult');
+  if (!state.sshHostKey || !$('#sshFingerprintConfirm').checked) {
+    resultNode.className = 'ssh-login-result full error';
+    resultNode.textContent = 'ต้องอ่านและยืนยัน host fingerprint ก่อน';
+    setSshFlow('fingerprint', true);
+    return;
+  }
+  const authentication = $('#sshAuthentication').value;
+  const body = {
+    host: $('#sshHost').value.trim(),
+    port: Number($('#sshPort').value),
+    username: $('#sshUsername').value.trim(),
+    authentication,
+    hostKey: state.sshHostKey.hostKey,
+    expectedFingerprint: state.sshHostKey.fingerprint,
+    ...(authentication === 'private-key' ? { privateKey: $('#sshPrivateKey').value } : {}),
+    ...(authentication === 'password' ? { password: $('#sshPassword').value } : {}),
+  };
+  const button = $('#sshConnectButton');
+  button.disabled = true;
+  resultNode.className = 'ssh-login-result full';
+  resultNode.textContent = 'กำลัง authenticate และตรวจ remote identity…';
+  setSshFlow('authenticate');
+  try {
+    const data = await api('/linux/ssh/connect', { method: 'POST', body: JSON.stringify(body) });
+    $('#sshPrivateKey').value = '';
+    $('#sshPrivateKeyFile').value = '';
+    $('#sshPassword').value = '';
+    renderSshStatus(data.status);
+    setSshFlow('ready');
+    $$('.ssh-login-node').forEach((node) => node.classList.add('done'));
+    resultNode.className = 'ssh-login-result full success';
+    resultNode.textContent = `Login สำเร็จ · ${data.status.username}@${data.status.host} · agent พร้อมใช้ linux_* ทำงานต่อ`;
+    toast('SSH login สำเร็จ — Cherry พร้อมทำงานบนเครื่องปลายทางแล้ว');
+  } catch (error) {
+    resultNode.className = 'ssh-login-result full error';
+    resultNode.textContent = error instanceof Error ? error.message : String(error);
+    setSshFlow('authenticate', true);
+  } finally {
+    button.disabled = false;
+  }
+});
 
 function updateChatIdentity() {
   const node = $('#chatIdentity');

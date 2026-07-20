@@ -1,5 +1,6 @@
 import type { AgentTool } from "../../core/types.js";
 import type { LinuxSshClient } from "../../connectors/linux/LinuxSshClient.js";
+import type { LinuxSshProfileStore } from "../../connectors/linux/LinuxSshProfileStore.js";
 
 function requiredString(args: Record<string, unknown>, key: string): string {
   const value = args[key];
@@ -33,21 +34,28 @@ function serviceAction(value: unknown): "start" | "stop" | "restart" | "reload" 
   return value;
 }
 
-export function createLinuxTools(linux: LinuxSshClient): AgentTool[] {
+export function createLinuxTools(linux: LinuxSshClient, profiles?: LinuxSshProfileStore): AgentTool[] {
   return [
     {
       name: "linux_get_connection_status",
-      description: "Check whether the Linux SSH capability pack is configured and inspect the configured SSH target without exposing private key contents.",
+      description: "Inspect the active SSH login profile without exposing credentials. Do not use this as a substitute for logging in; call linux_login when the user asks to connect or work on the server.",
       risk: "safe",
       parameters: { type: "object", properties: {}, additionalProperties: false },
-      execute: async () => linux.status(),
+      execute: async () => profiles?.status() ?? linux.status(),
+    },
+    {
+      name: "linux_login",
+      description: "Log in to the active SSH profile and return verified remote identity evidence. Use this immediately for SSH/connect requests, then continue with the requested linux_* work in the same agent run. Credentials are configured in the secure SSH Login panel, never in chat.",
+      risk: "safe",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+      execute: async () => profiles?.probe() ?? linux.execute("printf '%s\\n' '--- hostname ---'; hostname; printf '%s\\n' '--- user ---'; id -un; printf '%s\\n' '--- kernel ---'; uname -sr; printf '%s\\n' '--- uptime ---'; uptime"),
     },
     {
       name: "linux_probe_connection",
-      description: "Safely verify SSH connectivity to the configured Linux host and return the remote hostname, current user, kernel, and uptime. Use this for a bare ssh/connect request before any mutating command.",
+      description: "Compatibility alias for verifying the active SSH login. Prefer linux_login for a new connect request.",
       risk: "safe",
       parameters: { type: "object", properties: {}, additionalProperties: false },
-      execute: async () => linux.execute("printf '%s\\n' '--- hostname ---'; hostname; printf '%s\\n' '--- user ---'; id -un; printf '%s\\n' '--- kernel ---'; uname -sr; printf '%s\\n' '--- uptime ---'; uptime"),
+      execute: async () => profiles?.probe() ?? linux.execute("printf '%s\\n' '--- hostname ---'; hostname; printf '%s\\n' '--- user ---'; id -un; printf '%s\\n' '--- kernel ---'; uname -sr; printf '%s\\n' '--- uptime ---'; uptime"),
     },
     {
       name: "linux_exec",

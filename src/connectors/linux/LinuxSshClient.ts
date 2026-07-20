@@ -5,6 +5,8 @@ export type LinuxSshClientOptions = {
   username?: string;
   port?: number;
   privateKeyPath?: string;
+  password?: string;
+  askpassPath?: string;
   knownHostsFile?: string;
   strictHostKeyChecking?: boolean;
   timeoutMs?: number;
@@ -46,24 +48,34 @@ function appendLimited(current: string, chunk: Buffer, limit: number): { value: 
 }
 
 export class LinuxSshClient {
-  readonly #host: string;
-  readonly #username: string | undefined;
-  readonly #port: number;
-  readonly #privateKeyPath: string | undefined;
-  readonly #knownHostsFile: string | undefined;
-  readonly #strictHostKeyChecking: boolean;
-  readonly #timeoutMs: number;
-  readonly #maxOutputBytes: number;
+  #host = "";
+  #username: string | undefined;
+  #port = 22;
+  #privateKeyPath: string | undefined;
+  #password: string | undefined;
+  #askpassPath: string | undefined;
+  #knownHostsFile: string | undefined;
+  #strictHostKeyChecking = true;
+  #timeoutMs = 30_000;
+  #maxOutputBytes = 1_000_000;
+  #lastConnectedAt: string | undefined;
 
   constructor(options: LinuxSshClientOptions) {
+    this.configure(options);
+  }
+
+  configure(options: LinuxSshClientOptions): void {
     this.#host = options.host.trim();
     this.#username = options.username?.trim() || undefined;
     this.#port = positiveInteger(options.port, 22);
     this.#privateKeyPath = options.privateKeyPath?.trim() || undefined;
+    this.#password = options.password || undefined;
+    this.#askpassPath = options.askpassPath?.trim() || undefined;
     this.#knownHostsFile = options.knownHostsFile?.trim() || undefined;
     this.#strictHostKeyChecking = options.strictHostKeyChecking ?? true;
     this.#timeoutMs = positiveInteger(options.timeoutMs, 30_000);
     this.#maxOutputBytes = positiveInteger(options.maxOutputBytes, 1_000_000);
+    this.#lastConnectedAt = undefined;
   }
 
   isConfigured(): boolean {
@@ -77,6 +89,10 @@ export class LinuxSshClient {
     port: number;
     strictHostKeyChecking: boolean;
     privateKeyConfigured: boolean;
+    passwordConfigured: boolean;
+    knownHostsConfigured: boolean;
+    authentication: "private-key" | "password" | "ssh-agent";
+    lastConnectedAt: string | null;
   } {
     return {
       configured: this.isConfigured(),
@@ -85,6 +101,10 @@ export class LinuxSshClient {
       port: this.#port,
       strictHostKeyChecking: this.#strictHostKeyChecking,
       privateKeyConfigured: Boolean(this.#privateKeyPath),
+      passwordConfigured: Boolean(this.#password),
+      knownHostsConfigured: Boolean(this.#knownHostsFile),
+      authentication: this.#privateKeyPath ? "private-key" : this.#password ? "password" : "ssh-agent",
+      lastConnectedAt: this.#lastConnectedAt ?? null,
     };
   }
 
@@ -95,8 +115,13 @@ export class LinuxSshClient {
 
     const target = this.#username ? `${this.#username}@${this.#host}` : this.#host;
     const connectTimeoutSeconds = Math.max(1, Math.ceil(Math.min(timeoutMs, 120_000) / 1_000));
+    const passwordAuthentication = Boolean(this.#password);
+    if (passwordAuthentication && !this.#askpassPath) {
+      throw new Error("SSH password authentication is missing its secure askpass helper");
+    }
+
     const args = [
-      "-o", "BatchMode=yes",
+      "-o", `BatchMode=${passwordAuthentication ? "no" : "yes"}`,
       "-o", `ConnectTimeout=${connectTimeoutSeconds}`,
       "-o", "ServerAliveInterval=15",
       "-o", "ServerAliveCountMax=2",
@@ -104,6 +129,13 @@ export class LinuxSshClient {
     ];
 
     if (this.#privateKeyPath) args.push("-i", this.#privateKeyPath);
+    if (passwordAuthentication) {
+      args.push(
+        "-o", "PreferredAuthentications=password,keyboard-interactive",
+        "-o", "PubkeyAuthentication=no",
+        "-o", "NumberOfPasswordPrompts=1",
+      );
+    }
     if (this.#knownHostsFile) args.push("-o", `UserKnownHostsFile=${this.#knownHostsFile}`);
 
     if (this.#strictHostKeyChecking) {
@@ -119,6 +151,15 @@ export class LinuxSshClient {
       const child = spawn("ssh", args, {
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
+        env: passwordAuthentication
+          ? {
+              ...process.env,
+              DISPLAY: process.env.DISPLAY || ":0",
+              SSH_ASKPASS: this.#askpassPath,
+              SSH_ASKPASS_REQUIRE: "force",
+              CHERRY_SSH_PASSWORD: this.#password,
+            }
+          : process.env,
       });
 
       let stdout = "";
@@ -155,6 +196,7 @@ export class LinuxSshClient {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        if (exitCode === 0 && !timedOut) this.#lastConnectedAt = new Date().toISOString();
         resolve({
           command: normalized,
           exitCode,
