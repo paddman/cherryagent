@@ -1,409 +1,49 @@
 # CherryAgent
 
-**Tool-calling-first AI office secretary, planner, engineer, and operations agent that can read, think, plan, act, verify, remember, schedule work, solve technical problems, and operate across devices.**
+CherryAgent คือ AI operating agent แบบ tool-calling-first สำหรับงานสำนักงาน วิศวกรรมระบบ เซิร์ฟเวอร์ ฐานข้อมูล รายงาน และ workflow หลาย agent โดยหลักการสำคัญคือ:
 
-CherryAgent is designed as an **office operating agent**, not merely a chatbot. It combines office planning, reminders, Gmail, Calendar, Drive, approvals, notifications, and a persistent Engineer Loop Engine for incidents, debugging, code changes, infrastructure work, and self-repair.
+> Cherry ต้องลงมือผ่านเครื่องมือ ตรวจผลจากหลักฐาน และอ้างว่างานสำเร็จได้เมื่อมีผลลัพธ์ยืนยันเท่านั้น
 
-The core principle:
+ระบบรองรับ OpenAI-compatible LLM เช่น Qwen, vLLM, SGLang และ Ollama-compatible endpoints ใช้ TypeScript/Node.js เป็น runtime หลัก และมี PWA/Tauri เป็นหน้าจอใช้งานข้ามอุปกรณ์
 
-> **The model should not just answer. It should choose tools, execute work, inspect results, recover from errors, verify with evidence, learn from success, and only claim completion after proof.**
-
-## Why TypeScript
-
-TypeScript is the primary language so one codebase can cover:
-
-- Web and installable PWA
-- Windows, macOS, Linux
-- iOS and Android through native wrappers
-- Node.js server and local agent runtime
-- Browser automation and office APIs
-- MCP, AI SDKs, native wrappers, and remote tool workers
-
-The first cross-device target is an **installable PWA**. Tauri 2 is the next native layer for deeper operating-system integration.
-
-## Current capabilities
-
-Already included:
-
-- Autonomous multi-step agent loop
-- OpenAI-compatible LLM provider for Qwen/vLLM/SGLang/Ollama-compatible endpoints
-- Native tool registry with JSON-schema tool definitions
-- Tool execution with observation feedback and bounded retries
-- **Engineer Loop Engine with strict phase state machine**
-- Engineer evidence trace, retry budget, block/resume, fail/abort, and verified completion
-- Automatic reusable Runbook capture after successful verification
-- Office planner dashboard
-- Kanban flow board with drag-and-drop status changes
-- Today timeline, overdue queue, upcoming work, priorities, tags, dependencies, duration, start time, and deadlines
-- Persistent reminder scheduler
-- One-time, interval, daily, weekdays, weekly, monthly, and 5-field cron schedules
-- Timezone-aware schedules with `Asia/Bangkok` as the default
-- Durable in-app alert inbox
-- Browser notifications in the PWA
-- Snooze and reminder enable/disable controls
-- Optional scheduled delivery through Gmail, LINE Messaging API, Slack webhook, and generic webhook
-- Approval inbox for external and dangerous actions
-- Persistent local JSON memory
-- Gmail search/read/draft/send/reply/archive tools
-- Google Calendar list/create/update/delete tools
-- Google Drive search/read/create-text/move tools
-- HTTP API
-- Installable responsive PWA
-- Docker support
-- CI type checking and build
-- Local-first authentication with scrypt password hashing, bearer sessions, audit events, and viewer/user/admin roles
-- Cherry Report Studio: `.xlsx`/`.csv` upload, deterministic KPI/charts, aggregate-only AI insight, Thai PDF, evidence, and tenant isolation
-- Persistent per-Chat-ID model sessions with secret redaction and serialized turns
-- Paired Cherry Node execution for remote shell, process, system, and file work
-- Dynamic MCP stdio and Streamable HTTP tools through the official MCP SDK
-- Runtime-loaded `skills/*/SKILL.md` workflows, including `cherry-node-operator`
-
-See [Cherry Gateway, Nodes, Sessions, and MCP](docs/CHERRY_GATEWAY_MCP.md) for pairing, daemon startup, MCP registration, security boundaries, and API examples.
-
-## PWA work surfaces
-
-The dashboard has eight work surfaces:
-
-1. **Dashboard** — today, overdue work, active work, waiting work, reminders, alerts, quick planning, and timeline.
-2. **Report Studio** — upload Excel/CSV or run a built-in sales sample, then inspect KPI, SVG charts, quality warnings, evidence, and a Thai PDF.
-3. **Flow board** — drag work across `inbox`, `planned`, `doing`, `waiting`, and `done`.
-4. **Office Inbox** — sync Gmail messages, triage them into tenant-scoped work items, and track usage credits.
-5. **Reminder center** — create recurring schedules, inspect next runs, pause/resume schedules, read alerts, and snooze notifications.
-6. **Engineer** — inspect active technical loops, current phase, iteration budget, evidence, outcomes, and learned runbooks.
-7. **Deploy Flow (Advanced)** — launch an asynchronous Agent workflow, inspect the dependency topology, and follow live task/evidence progress over SSE.
-8. **Ask Cherry** — natural-language tool calling across routed report, planner, engineer, connector, file, and memory tool packs.
-
----
-
-# Engineer Loop Engine
-
-For incidents, debugging, code changes, infrastructure work, technical troubleshooting, or self-repair, CherryAgent uses a strict bounded engineering loop:
+## ภาพรวมการทำงาน
 
 ```text
-Plan
-  ↓
-Execute
-  ↓
-Observe
-  ↓
-Diagnose
-  ↓
-Patch
-  ↓
-Test
-  ↓
-Verify
-  ↓
-Learn
+ผู้ใช้ / PWA / API / LINE
+          |
+          v
+Chat ID -> CherryAgent -> Tool Router -> Approval Gate
+               |              |
+               |              +-> Built-in tools
+               |              +-> MCP tools
+               |              +-> SSH connector
+               |              +-> Paired Cherry Node
+               |
+               +-> Observe -> Verify -> Execution Trail -> คำตอบ
 ```
 
-A loop cannot be completed successfully without **verification evidence**.
-
-Typical evidence:
-
-- command output
-- HTTP/API response
-- health check result
-- test result
-- file content
-- service status
-- metric or monitoring result
-- tool-confirmed external state
-
-CherryAgent is explicitly instructed not to invent verification evidence.
-
-## Engineer loop state
-
-Each loop persists:
-
-- objective
-- observable success criteria
-- current phase
-- current iteration
-- maximum iteration budget
-- status: `running`, `blocked`, `succeeded`, `failed`, or `aborted`
-- hypothesis
-- full phase event history
-- tool/command used
-- errors
-- evidence
-- verification evidence
-- root cause
-- fix
-- rollback
-- prevention
-- completion reason
-
-Default persistent state file:
-
-```env
-CHERRY_ENGINEER_FILE=.cherry/engineer.json
-```
-
-## Retry budget and stop conditions
-
-Engineer loops are bounded. Default agent tool-step budget:
-
-```env
-CHERRY_MAX_STEPS=24
-```
-
-Each Engineer Loop also has its own `maxIterations`, between 1 and 25.
-
-The loop should stop or pause when:
-
-- success criteria are verified
-- retry budget is exhausted
-- safety policy blocks the required action
-- approval is required
-- credentials or access are missing
-- an external dependency is unavailable
-- a maintenance window is required
-- a human decision is required
-
-Blocked loops preserve the exact current phase and can later resume.
-
-## Engineer phase transitions
-
-Allowed transitions are deliberately constrained:
-
-```text
-plan      -> execute
-execute   -> observe
-observe   -> diagnose | verify
-diagnose  -> patch | execute
-patch     -> test
-test      -> observe | verify
-verify    -> learn | diagnose
-learn     -> complete
-```
-
-Failed testing or failed verification can consume another bounded iteration through `engineer_next_iteration`.
-
-## Automatic Runbook learning
-
-After verified success and the `learn` phase, `engineer_complete_loop` automatically creates a reusable Runbook containing:
-
-- symptoms
-- root cause
-- fix
-- diagnostic evidence
-- verification evidence
-- rollback
-- prevention
-
-This follows the project policy that successful incidents should become reusable operational knowledge.
-
-## Engineer tool pack
-
-- `engineer_start_loop`
-- `engineer_get_loop`
-- `engineer_list_loops`
-- `engineer_record_phase`
-- `engineer_next_iteration`
-- `engineer_block_loop`
-- `engineer_resume_loop`
-- `engineer_complete_loop`
-- `engineer_fail_loop`
-- `engineer_abort_loop`
-- `engineer_get_dashboard`
-- `engineer_list_runbooks`
-
-Example request:
-
-```text
-HTTP 524 on the Cherry trading journal. Find the root cause, fix it, verify response time, and save the successful incident as a runbook.
-```
-
-Expected operating pattern:
-
-```text
-engineer_start_loop
-        ↓
-record plan
-        ↓
-real diagnostic tools
-        ↓
-record execute / observe
-        ↓
-diagnose
-        ↓
-real patch tools
-        ↓
-test
-        ↓
-verify with real evidence
-        ↓
-learn
-        ↓
-engineer_complete_loop
-        ↓
-automatic reusable runbook
-```
-
----
-
-# Planner dashboard
-
-## Flow states
-
-```text
-inbox -> planned -> doing -> waiting -> done
-             ^          |
-             +----------+
-```
-
-- `inbox` — captured but not triaged
-- `planned` — committed work
-- `doing` — actively in progress
-- `waiting` — blocked or delegated
-- `done` — verified complete
-- `cancelled` — no longer active
-
-Planner items can carry:
-
-- priority: `low`, `normal`, `high`, `urgent`
-- start time
-- due time
-- duration
-- timezone
-- tags
-- flow/project ID
-- dependencies with cycle protection
-
-## Planner tool pack
-
-- `planner_get_dashboard`
-- `planner_create_item`
-- `planner_list_items`
-- `planner_update_item_status`
-- `planner_add_dependency`
-- `planner_create_reminder`
-- `planner_create_external_reminder`
-- `planner_list_reminders`
-- `planner_set_reminder_enabled`
-- `planner_snooze_alert`
-- `planner_mark_alert_read`
-
----
-
-# Reminder scheduler
-
-Supported schedules:
-
-| Kind | Example |
-|---|---|
-| `once` | Run once at a specific ISO 8601 time |
-| `interval` | Every 30 minutes |
-| `daily` | Every day at 09:00 |
-| `weekdays` | Monday-Friday at 08:30 |
-| `weekly` | Monday, Wednesday, Friday at 17:00 |
-| `monthly` | Day 1 of every month at 09:00 |
-| `cron` | `0 9 * * 1-5` |
-
-Default scheduler interval:
-
-```env
-CHERRY_SCHEDULER_INTERVAL_MS=15000
-```
-
-Planner persistence:
-
-```env
-CHERRY_PLANNER_FILE=.cherry/planner.json
-```
-
-## Notification channels
-
-Built in without extra server configuration:
-
-- `in_app`
-- `browser`
-
-Optional server-side delivery:
-
-- `email` — Gmail
-- `line` — LINE Messaging API push
-- `slack` — Slack incoming webhook
-- `webhook` — generic JSON webhook
-
-Configuration:
-
-```env
-CHERRY_NOTIFY_EMAIL_TO=
-CHERRY_NOTIFY_SLACK_WEBHOOK=
-CHERRY_NOTIFY_WEBHOOK_URL=
-CHERRY_NOTIFY_LINE_CHANNEL_ACCESS_TOKEN=
-CHERRY_NOTIFY_LINE_TO=
-```
-
-External notification schedules use an `external` risk tool and should enter the approval inbox before creation.
-
----
-
-# Google Workspace tools
-
-## Gmail
-
-- `gmail_search`
-- `gmail_read_message`
-- `gmail_create_draft`
-- `gmail_send_email`
-- `gmail_reply`
-- `gmail_archive`
-
-## Google Calendar
-
-- `calendar_list_events`
-- `calendar_create_event`
-- `calendar_update_event`
-- `calendar_delete_event`
-
-## Google Drive
-
-- `drive_search_files`
-- `drive_read_file`
-- `drive_create_text_file`
-- `drive_move_file`
-
----
-
-# Architecture
-
-```text
-User / PWA / Native App / API / LINE / Slack / Teams
-                         |
-                         v
-                 +----------------+
-                 |  Cherry Agent  |
-                 | Tool Calling   |
-                 | Observe/Verify |
-                 +-------+--------+
-                         |
-       +-----------------+------------------+
-       |                 |                  |
-       v                 v                  v
-    Planner          Engineer Loop       Approval
-       |                 |                  |
-       v                 v                  v
- Flow / Timeline    8-phase state       Approval Inbox
- Reminders / Alerts Evidence / Retry     Approve & run
- Scheduler / Snooze Runbook learning
-       |
-       v
- Notification Dispatcher
- in-app / browser / email / LINE / Slack / webhook
-
-                         |
-                         v
-                   Tool Registry
-                         |
-      +------------------+-------------------+
-      |          |           |               |
-    Files      Gmail      Calendar          Drive
-```
-
-# Quick start
+## สารบัญฟังก์ชัน
+
+| ฟังก์ชัน | ใช้ทำอะไร | Tool/API หลัก |
+|---|---|---|
+| 1. Agent Execution | เลือกเครื่องมือ ลงมือ ตรวจผล และแสดง flow | Tool Router, Approval Gate, Correctness Loop |
+| 2. Chat Sessions | จำบริบทและ log แยกตาม Chat ID | `/chat`, `/chat/history`, `/chat/logs` |
+| 3. Cherry Gateway & Nodes | เชื่อมและทำงานบนเครื่องอื่นแบบ OpenClaw-style | `node_*`, `/nodes/*` |
+| 4. MCP Tool Hub | โหลด MCP server และ tools แบบ dynamic | `mcp_*`, `/mcp/servers` |
+| 5. Skills | โหลด workflow เฉพาะงานจาก `SKILL.md` | `skills/*/SKILL.md`, `/skills` |
+| 6. SSH & Linux | ล็อกอินและดูแล Linux ผ่าน SSH profile | `linux_*`, `/linux/ssh/*` |
+| 7. Engineer Loop | แก้ incident แบบมี phase, retry และหลักฐาน | `engineer_*` |
+| 8. Multi-agent & Cognition | แตกงาน ส่งต่องาน และเก็บองค์ความรู้ | `orchestrator_*`, `agent_*`, `cognition_*` |
+| 9. Planner & Reminders | วางแผน งานประจำ และแจ้งเตือน | `planner_*` |
+| 10. Office & Google Workspace | Gmail, Calendar, Drive และ Office Inbox | `gmail_*`, `calendar_*`, `drive_*` |
+| 11. Reports & BidPilot | วิเคราะห์ Excel/CSV, สร้าง PDF และงานประมูล | `report_*`, `bidpilot_*` |
+| 12. Infrastructure & Data | Proxmox, vSphere, Database, Market | `proxmox_*`, `vsphere_*`, `db_*`, `market_*` |
+| 13. Security & Tenancy | Authentication, RBAC, approvals, audit, usage | `/auth/*`, `/approvals`, `/usage/*` |
+| 14. PWA, API & Desktop | ใช้งานผ่านเว็บ API และ native wrapper | PWA, HTTP API, Tauri 2 |
+
+## เริ่มใช้งาน
+
+ต้องใช้ Node.js 20 ขึ้นไป
 
 ```bash
 cp .env.example .env
@@ -411,13 +51,13 @@ npm install
 npm run server
 ```
 
-Open:
+เปิดหน้าเว็บ:
 
 ```text
 http://localhost:8787
 ```
 
-## Local Qwen example
+ตัวอย่าง LLM configuration:
 
 ```env
 CHERRY_LLM_BASE_URL=http://127.0.0.1:8000/v1
@@ -426,239 +66,410 @@ CHERRY_LLM_MODEL=qwen3.6-27b
 CHERRY_MAX_STEPS=24
 ```
 
-CherryAgent sends tool definitions to the model and executes returned tool calls through the risk-aware tool registry.
-
-## Google Workspace authentication
-
-Recommended for long-running servers:
-
-```env
-CHERRY_GOOGLE_CLIENT_ID=your-oauth-client-id
-CHERRY_GOOGLE_CLIENT_SECRET=your-oauth-client-secret
-CHERRY_GOOGLE_REFRESH_TOKEN=your-refresh-token
-```
-
-Short-lived testing:
-
-```env
-CHERRY_GOOGLE_ACCESS_TOKEN=temporary-access-token
-```
-
-## CherryAgent API authentication
-
-Authentication is enabled by default. Set the initial admin credentials before the first server boot:
+Authentication เปิดโดยค่าเริ่มต้น ควรตั้ง admin ก่อน boot ครั้งแรก:
 
 ```env
 CHERRY_AUTH_ENABLED=true
-CHERRY_AUTH_ADMIN_EMAIL=padd@cherrydeskx.com
+CHERRY_AUTH_ADMIN_EMAIL=admin@example.com
 CHERRY_AUTH_ADMIN_PASSWORD=use-a-unique-password-with-at-least-12-characters
 ```
 
-CherryAgent stores local users and hashed session state in `.cherry/auth.json`. See [`docs/AUTHENTICATION.md`](docs/AUTHENTICATION.md) for login, bearer-token API calls, roles, and the local development opt-out.
+ดูรายละเอียดที่ [Authentication](docs/AUTHENTICATION.md)
 
 ---
 
-# API
+## ฟังก์ชัน 1 — Agent Execution และ Execution Trail
 
-## Health
+Agent loop ทำงานเป็นรอบ: รับคำสั่ง เลือก tools อ่านผลลัพธ์ แก้ทางเมื่อผิดพลาด และส่ง candidate answer ให้ Correctness Loop ตรวจอีกชั้น
 
-```bash
-curl http://localhost:8787/health
-```
+ความสามารถหลัก:
 
-The response includes model, tool count, connectors, scheduler state, planner counts, Engineer Loop counts, and pending approvals.
-
-All application API routes require `Authorization: Bearer <token>` when authentication is enabled. `/health` remains public for monitoring; see [`docs/AUTHENTICATION.md`](docs/AUTHENTICATION.md).
-
-## Report Studio
-
-Create a sample report without any connector setup:
-
-```bash
-curl -X POST http://localhost:8787/reports/sample \
-  -H 'Authorization: Bearer <token>' \
-  -H 'content-type: application/json' \
-  -d '{}'
-```
-
-Upload a real workbook:
-
-```bash
-curl -X POST http://localhost:8787/reports \
-  -H 'Authorization: Bearer <token>' \
-  -F 'file=@sales.xlsx' \
-  -F 'template=auto'
-```
-
-Generation runs asynchronously through `ingest → profile → analyze → visualize → pdf → verify`. Follow progress at `GET /reports/:id/events`, inspect the report at `GET /reports/:id`, and download the verified artifact at `GET /reports/:id/pdf`. Raw rows remain in the tenant workspace; only schema and aggregates are sent to the narrative model. See [`docs/REPORT_STUDIO.md`](docs/REPORT_STUDIO.md).
-
-## Deploy Flow topology
-
-Start an asynchronous dependency-aware Agent workflow:
-
-```bash
-curl -X POST http://localhost:8787/orchestrator/runs \
-  -H 'Authorization: Bearer <token>' \
-  -H 'content-type: application/json' \
-  -d '{"goal":"Inspect the CherryAgent health endpoint and summarize verified findings","preferredRoles":["engineer"]}'
-```
-
-Inspect a run with `GET /orchestrator/runs/RUN_ID`. The live topology stream is available at `GET /orchestrator/runs/RUN_ID/events` as Server-Sent Events. Each task exposes its dependency IDs, status, progress step, active tool, handoff, and evidence records.
-
-Every workflow has a traceable identity chain:
+- route เฉพาะ tool pack ที่เกี่ยวข้อง เพื่อลด context และการเลือกผิด
+- เรียกหลาย tools ต่อเนื่องภายในคำสั่งเดียว
+- บังคับใช้ risk policy ก่อน tool execution
+- เก็บ assistant/tool/error/correctness events เป็น trace
+- แสดง Flow Nodes และ Execution Trail ในหน้า Chat
+- ไม่แสดง chain-of-thought ภายใน แต่แสดง tool call และหลักฐานที่ตรวจสอบได้
 
 ```text
-jobId  →  runId + traceId  →  taskId + spanId  →  logId + sequence
+User request
+  -> Assistant selects tool
+  -> Tool executes or waits for approval
+  -> Agent observes result
+  -> Correctness verifier
+  -> Final answer + trace + logId
 ```
 
-Optional tags can be sent when starting a run:
+## ฟังก์ชัน 2 — Persistent Chat Sessions
+
+ทุกห้องมี Chat ID คงที่ ใช้เป็นทั้ง model session, audit session, log grouping และ Cherry Node binding
+
+- เก็บ user/assistant history แบบ bounded
+- redact password, token, Authorization header และ private key ก่อนบันทึก
+- serialize คำสั่งที่เข้าพร้อมกันใน Chat ID เดียวกัน
+- restore ประวัติเดิมเมื่อเปิด PWA ใหม่
+- กด “แชตใหม่” เพื่อสร้าง Chat ID ใหม่และแยก context
+
+ไฟล์เริ่มต้น:
+
+```env
+CHERRY_CHAT_SESSION_FILE=.cherry/chat-sessions.json
+CHERRY_CHAT_LOG_FILE=.cherry/chat-logs.json
+```
+
+API:
+
+```text
+POST   /chat
+GET    /chat/history?chatId=...
+DELETE /chat/history?chatId=...
+GET    /chat/logs?chatId=...
+```
+
+## ฟังก์ชัน 3 — Cherry Gateway และ Paired Nodes
+
+Cherry Gateway เป็น control plane ส่วน `cherry-node` เป็น execution daemon ที่รันบนเครื่องปลายทางและเชื่อมกลับ Gateway ด้วย outbound polling จึงใช้งานหลัง NAT ได้
+
+```text
+Chat ID -> node binding -> Gateway task queue -> Cherry Node -> task result
+```
+
+Node tools:
+
+- `node_list` — ดูเครื่องที่จับคู่และสถานะ online
+- `node_get_binding` — ดูเครื่องของ Chat ID ปัจจุบัน
+- `node_bind_chat` — ผูก Chat ID กับเครื่อง
+- `node_system_info` — hostname, OS, user, uptime และ workspace
+- `node_process_list` — ดู process
+- `node_read_file` — อ่านไฟล์ใน node workspace
+- `node_write_file` — เขียนไฟล์หลัง approval
+- `node_exec` — รัน shell command หลัง dangerous approval
+
+### วิธี Pair เครื่อง
+
+1. เปิดหน้า Chat แล้วกด `Pair Node`
+2. ตั้งชื่อเครื่องและ workspace
+3. กดสร้าง one-time pairing code
+4. copy คำสั่งไปรันบนเครื่องปลายทาง
+5. เมื่อ node online ให้ Bind กับ Chat ID หากมีหลายเครื่อง
+
+หรือรันด้วย environment โดยตรง:
 
 ```bash
-curl -X POST http://localhost:8787/orchestrator/runs \
+CHERRY_GATEWAY_URL=https://cherry.example.com \
+CHERRY_NODE_PAIRING_CODE='cherry-...' \
+CHERRY_NODE_NAME='production-01' \
+CHERRY_NODE_WORKSPACE=/srv/apps \
+npm run node:agent
+```
+
+Node token ถูกบันทึกที่ `~/.cherry-node/profile.json` ด้วย mode `0600`; Gateway เก็บเฉพาะ token hash ควรรัน daemon ด้วย OS account ที่มีสิทธิ์เท่าที่จำเป็น
+
+คู่มือเต็ม: [Cherry Gateway, Nodes, Sessions, and MCP](docs/CHERRY_GATEWAY_MCP.md)
+
+## ฟังก์ชัน 4 — MCP Tool Hub
+
+Cherry เป็น MCP client และรองรับสอง transport:
+
+- stdio — Gateway spawn MCP server process
+- Streamable HTTP — Gateway เชื่อม MCP endpoint ผ่าน HTTP/SSE
+
+เมื่อเชื่อมสำเร็จ tools จะถูกเพิ่มใน Tool Registry เป็น:
+
+```text
+mcp_<server>_<server-id>_<tool>
+```
+
+MCP tools ใช้ Approval Gate, audit, usage accounting และ Execution Trail ชุดเดียวกับ built-in tools
+
+ตัวอย่างลงทะเบียน stdio server:
+
+```bash
+curl -X POST http://localhost:8787/mcp/servers \
   -H 'Authorization: Bearer <token>' \
-  -H 'content-type: application/json' \
-  -d '{"goal":"Build a sales report","tags":["excel","report","urgent"]}'
-```
-
-The run snapshot includes recent structured logs. For a dedicated timeline use `GET /orchestrator/runs/RUN_ID/logs`; filter with `taskId`, `since`, and `limit`. Each log contains action, level, tool, step/maxSteps, tags, and compact event data. Logs are persisted in `.cherry/agentic.json` and also stream through the run SSE channel as `log.created` events.
-
-## Enterprise workspace and Office Inbox
-
-Cherry’s first enterprise wedge is **Inbox-to-Execution**: turn incoming work into an owned, scheduled task with a traceable result. The current control plane is tenant-aware and exposes organization context, RBAC, usage credits, and Office Inbox APIs:
-
-```bash
-curl http://localhost:8787/workspace/context \
-  -H 'Authorization: Bearer <token>'
-
-curl http://localhost:8787/office/inbox \
-  -H 'Authorization: Bearer <token>'
-
-curl -X POST http://localhost:8787/office/inbox/sync \
-  -H 'Authorization: Bearer <token>' \
-  -H 'content-type: application/json' \
-  -d '{"query":"in:inbox newer_than:7d","maxResults":25}'
-
-curl http://localhost:8787/usage/dashboard \
-  -H 'Authorization: Bearer <token>'
-```
-
-Usage is measured as workflow/agent credits rather than exposing model token cost. The default pilot budget is 10,000 credits per tenant per calendar month; admins can update it with `POST /usage/budget`. See [`docs/ENTERPRISE_WORKFORCE.md`](docs/ENTERPRISE_WORKFORCE.md) for the tenant boundary, pilot wedge, and PostgreSQL migration contract.
-
-## Engineer dashboard
-
-```bash
-curl http://localhost:8787/engineer/dashboard
-```
-
-## Start an Engineer Loop
-
-```bash
-curl -X POST http://localhost:8787/engineer/loops \
   -H 'content-type: application/json' \
   -d '{
-    "objective":"Fix HTTP 524 on the trading journal",
-    "successCriteria":[
-      "Health endpoint returns HTTP 200",
-      "Journal request completes under proxy timeout",
-      "No new 524 during verification"
-    ],
-    "maxIterations":5,
-    "hypothesis":"Long synchronous request exceeds proxy timeout"
+    "name":"filesystem",
+    "transport":"stdio",
+    "command":"npx",
+    "args":["-y","@modelcontextprotocol/server-filesystem","/srv/shared"],
+    "risk":"external"
   }'
 ```
 
-## Record an Engineer phase
+Secret ไม่ควรถูกส่งใน JSON config ให้ใช้ `envFrom` หรือ `headersFrom` เพื่ออ้างถึง environment variable ของ Gateway
 
-```bash
-curl -X POST http://localhost:8787/engineer/loops/LOOP_ID/phase \
-  -H 'content-type: application/json' \
-  -d '{
-    "phase":"plan",
-    "summary":"Inspect upstream latency and timeout chain",
-    "nextPhase":"execute"
-  }'
+```text
+GET    /mcp/servers
+POST   /mcp/servers
+POST   /mcp/servers/:id/reconnect
+DELETE /mcp/servers/:id
 ```
 
-## List Engineer runbooks
+## ฟังก์ชัน 5 — Runtime Skills
 
-```bash
-curl http://localhost:8787/engineer/runbooks
+Cherry ค้นหา skills จาก:
+
+```text
+skills/<skill-name>/SKILL.md
 ```
 
-## Planner dashboard
+แต่ละ skill มี YAML frontmatter `name` และ `description` เมื่อข้อความตรงกับ metadata ระบบจะ inject เฉพาะ skill ที่เกี่ยวข้อง ไม่โหลดทุก skill เข้า context
 
-```bash
-curl http://localhost:8787/planner/dashboard
+skill ที่มาพร้อมระบบ:
+
+- `cherry-node-operator` — บังคับ workflow ให้ Cherry ไปต่อจาก connection status สู่ execution และ verification บน Node/MCP/SSH
+
+```text
+GET /skills
 ```
 
-## Create a recurring reminder
+## ฟังก์ชัน 6 — SSH และ Linux Operations
 
-```bash
-curl -X POST http://localhost:8787/planner/reminders \
-  -H 'content-type: application/json' \
-  -d '{"title":"Morning incident review","schedule":{"kind":"weekdays","time":"08:30","timezone":"Asia/Bangkok"},"channels":["in_app","browser"]}'
+SSH Login panel รองรับ:
+
+- private key
+- password ที่เข้ารหัส AES-256-GCM ก่อนบันทึก
+- SSH agent
+- host fingerprint confirmation
+- strict host-key checking
+
+เครื่องมือหลัก:
+
+```text
+linux_login                 linux_exec
+linux_read_file             linux_write_file
+linux_service_status        linux_service_action
+linux_logs                  linux_disk_status
+linux_process_list          linux_network_status
+linux_verify_http
 ```
 
-## Approval inbox
+Credential ส่งเข้า connector โดยตรง ไม่เข้า model prompt, Chat history หรือ Execution Trail
 
-```bash
-curl http://localhost:8787/approvals
+## ฟังก์ชัน 7 — Engineer Loop
+
+งาน incident, debugging และ system changes ใช้ state machine แบบ bounded:
+
+```text
+Plan -> Execute -> Observe -> Diagnose -> Patch -> Test -> Verify -> Learn
 ```
 
-Approve and execute:
+- กำหนด observable success criteria
+- เก็บ phase, hypothesis, evidence และ error
+- retry ด้วย iteration budget
+- block/resume เมื่อรอ approval หรือ dependency
+- complete ได้เมื่อมี verification evidence
+- สร้าง reusable Runbook หลัง verified success
 
-```bash
-curl -X POST http://localhost:8787/approvals/APPROVAL_ID/approve
+Tool pack ใช้ prefix `engineer_*` เช่น `engineer_start_loop`, `engineer_record_phase`, `engineer_next_iteration`, `engineer_complete_loop` และ `engineer_list_runbooks`
+
+คู่มือ: [Architecture](docs/ARCHITECTURE.md)
+
+## ฟังก์ชัน 8 — Multi-agent, Handoffs และ Cognition
+
+Deploy Flow แตกเป้าหมายเป็น dependency graph แล้วมอบหมาย specialist workers ตาม role
+
+- `orchestrator_*` — สร้างและติดตาม workflow
+- `agent_*` — worker registry, handoff และ evidence bus
+- `cognition_*` — persistent goals, episodes, beliefs, learned skills และ capability audit
+- live topology ผ่าน Server-Sent Events
+- identity chain: `jobId -> runId/traceId -> taskId/spanId -> logId`
+
+เอกสาร:
+
+- [Agentic AI](docs/AGENTIC-AI.md)
+- [Sub Agents](docs/SUB_AGENTS.md)
+- [Cognitive Runtime](docs/COGNITIVE_RUNTIME.md)
+
+## ฟังก์ชัน 9 — Planner, Reminders และ Notifications
+
+Planner รองรับสถานะ:
+
+```text
+inbox -> planned -> doing -> waiting -> done
 ```
 
-## Chat
+แต่ละงานมี priority, tags, project/flow ID, start/due time, duration, timezone และ dependencies
 
-```bash
-curl -X POST http://localhost:8787/chat \
-  -H 'content-type: application/json' \
-  -d '{"message":"Investigate this incident through the Engineer Loop, verify the fix, and capture the runbook"}'
+Reminder schedules:
+
+| ชนิด | ตัวอย่าง |
+|---|---|
+| `once` | รันครั้งเดียวตาม ISO time |
+| `interval` | ทุก 30 นาที |
+| `daily` | ทุกวัน 09:00 |
+| `weekdays` | จันทร์–ศุกร์ 08:30 |
+| `weekly` | วันที่เลือกในแต่ละสัปดาห์ |
+| `monthly` | วันที่กำหนดของเดือน |
+| `cron` | `0 9 * * 1-5` |
+
+ช่องทางแจ้งเตือน: in-app, browser, Gmail, LINE, Slack และ generic webhook โดย external delivery ต้องผ่าน approval
+
+## ฟังก์ชัน 10 — Office และ Google Workspace
+
+### Gmail
+
+ค้นหา/อ่านข้อความ, สร้าง draft, ส่ง, reply และ archive ผ่าน `gmail_*`
+
+### Google Calendar
+
+ดู, สร้าง, แก้ไข และลบ event ผ่าน `calendar_*`
+
+### Google Drive
+
+ค้นหา, อ่าน, สร้าง text file และย้ายไฟล์ผ่าน `drive_*`
+
+### Office Inbox
+
+sync Gmail เข้ากล่องงาน, triage เป็น tenant-scoped planner item และติดตาม usage credits
+
+```env
+CHERRY_GOOGLE_CLIENT_ID=
+CHERRY_GOOGLE_CLIENT_SECRET=
+CHERRY_GOOGLE_REFRESH_TOKEN=
 ```
 
----
+## ฟังก์ชัน 11 — Report Studio และ BidPilot
 
-# Safety model
+Report Studio:
 
-Tools have four risk levels:
+- upload `.xlsx`/`.csv`
+- profile schema และ data quality
+- คำนวณ KPI/charts แบบ deterministic
+- ส่งเฉพาะ schema/aggregates เข้า narrative model
+- สร้าง Thai PDF พร้อม evidence
+- รองรับ tenant isolation และ retention
 
-- `safe` — read-only/local utility
-- `write` — controlled local writes or draft/state creation
-- `external` — sends, posts, or changes an external service
-- `dangerous` — destructive or high-impact action
+Pipeline:
 
-By default:
+```text
+ingest -> profile -> analyze -> visualize -> pdf -> verify
+```
+
+BidPilot รองรับ extract เอกสาร/TOR, requirements, compliance matrix, proposal generation และ pipeline ผ่าน `bidpilot_*`
+
+เอกสาร: [Report Studio](docs/REPORT_STUDIO.md) และ [BidPilot](docs/BIDPILOT.md)
+
+## ฟังก์ชัน 12 — Infrastructure, Database และ Markets
+
+### Infrastructure
+
+- Proxmox: cluster, nodes, VMs, storage, network, task log, power, snapshot และ migration
+- vSphere: VMs, hosts, clusters, datastores, networks และ power operations
+- Observability และ security operations tools
+
+### Database
+
+- PostgreSQL, MySQL, SQLite และ Redis
+- inspect connection/schema ก่อน query
+- read-only query และ `EXPLAIN`
+- write/dangerous operations แยก risk level
+- จำกัดหนึ่ง SQL statement ต่อ call
+
+### Markets และ Trading
+
+- stock/crypto quote และ candles
+- technical analysis, financials และ news
+- research packs
+- spot order และ order status สำหรับ exchange ที่ตั้งค่าไว้
+
+## ฟังก์ชัน 13 — Security, Approval, Audit และ Tenancy
+
+Risk levels:
+
+| Risk | ความหมาย |
+|---|---|
+| `safe` | read-only/local utility |
+| `write` | controlled local write |
+| `external` | ส่งหรือเปลี่ยนข้อมูลใน external service |
+| `dangerous` | destructive หรือ high-impact action |
+
+ค่าเริ่มต้น:
 
 ```env
 CHERRY_AUTO_APPROVE=safe,write
 ```
 
-External and dangerous actions require approval. Engineer Loop tracking does not bypass tool risk policies; consequential real actions still pass through the normal approval gate.
+ระบบมี local authentication, scrypt password hashing, bearer sessions, admin/user/viewer RBAC, tenant IDs, usage budgets และ PostgreSQL audit logger แบบ fail-soft
 
-# Current limitations
+Approval API:
 
-- Engineer Loop currently orchestrates whatever real tools are installed. To perform SSH, Proxmox, VMware, Kubernetes, browser automation, or database repair, those tool packs must be added.
-- The current pilot runtime persists tenant-scoped control-plane state in local JSON, suitable for a single-node MVP. The PostgreSQL/RLS schema contract is in [`database/postgres/001_enterprise_control_plane.sql`](database/postgres/001_enterprise_control_plane.sql); repositories, locks, audit logs, queues, and SSE fan-out should move to PostgreSQL/Redis before multi-node production.
-- Browser notifications require a connected PWA client; full Web Push for completely disconnected clients is not yet implemented.
-- Email, LINE, Slack, and webhook delivery require corresponding configuration.
-- Notification delivery results are logged but not yet persisted as a per-channel delivery history on each alert.
+```text
+GET  /approvals
+POST /approvals/:id/approve
+POST /approvals/:id/deny
+```
 
-# Product direction
+## ฟังก์ชัน 14 — PWA, HTTP API และ Desktop
 
-Priority next layers:
+หน้า PWA แบ่ง work surfaces เป็น Dashboard, Report Studio, Flow Board, Office Inbox, Reminders, Engineer, Deploy Flow และ Ask Cherry
 
-1. PostgreSQL/Redis repositories, locks, queues, audit export, and tenant isolation enforcement
-2. SSH + Proxmox + VMware + Docker + Kubernetes engineer tools
-3. Playwright browser automation
-4. Google Docs, Sheets, Slides
-5. Microsoft 365, Teams, Outlook, OneDrive
-6. PDF/DOCX/XLSX/PPTX generation and editing
-7. Web Push and device-specific background notification workers
-8. Meeting capture, transcript, summary, decisions, and follow-up
-9. Daily briefing, overdue-task hunting, and proactive work queue
-10. Scoped autonomous office/ops autopilot with approval budgets
+API สำคัญ:
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the target design.
+| Endpoint | หน้าที่ |
+|---|---|
+| `GET /health` | model, tools, connectors, nodes, MCP และ runtime status |
+| `GET /tools` | รายการ tools และ risk |
+| `POST /chat` | รัน agent ด้วย Chat ID |
+| `GET /planner/dashboard` | planner summary |
+| `GET /engineer/dashboard` | Engineer Loop summary |
+| `POST /orchestrator/runs` | เริ่ม Deploy Flow |
+| `GET /reports` | รายการ reports |
+| `GET /usage/dashboard` | usage credits |
+| `GET /workspace/context` | tenant/user context |
+
+Tauri 2 เป็น native wrapper สำหรับ Windows/macOS/Linux และเป็นฐานสำหรับ OS integrations เพิ่มเติม
+
+## คำสั่งสำหรับพัฒนา
+
+```bash
+npm run dev             # interactive CLI
+npm run server          # HTTP/PWA Gateway
+npm run node:agent      # paired execution node
+npm run test:gateway    # session/node/MCP/skill integration tests
+npm run typecheck       # TypeScript validation
+npm run build           # compile backend to dist
+npm run desktop:dev     # Tauri development
+npm run desktop:build   # Tauri package
+```
+
+## Environment สำคัญ
+
+| Variable | ค่าเริ่มต้น/หน้าที่ |
+|---|---|
+| `CHERRY_PORT` | `8787` |
+| `CHERRY_WORKSPACE` | `workspace` |
+| `CHERRY_CHAT_SESSION_FILE` | `.cherry/chat-sessions.json` |
+| `CHERRY_NODE_FILE` | `.cherry/nodes.json` |
+| `CHERRY_NODE_TASK_TIMEOUT_MS` | `60000` |
+| `CHERRY_MCP_SERVER_FILE` | `.cherry/mcp-servers.json` |
+| `CHERRY_SKILLS_DIRECTORY` | `skills` |
+| `CHERRY_ENGINEER_FILE` | `.cherry/engineer.json` |
+| `CHERRY_PLANNER_FILE` | `.cherry/planner.json` |
+| `CHERRY_AUTH_FILE` | `.cherry/auth.json` |
+
+## ข้อจำกัดปัจจุบัน
+
+- Cherry Node MVP ใช้ authenticated polling; WebSocket streaming และ resumable streams ยังเป็นงานถัดไป
+- state หลักยังเป็น tenant-scoped local JSON เหมาะกับ single-node MVP; multi-node production ควรย้าย queue/locks/state ไป PostgreSQL และ Redis
+- `node_exec` มีพลังเท่ากับ OS account ที่รัน daemon จึงต้องใช้ least privilege และ dangerous approval
+- MCP secrets ต้องมาจาก Gateway environment ผ่าน `envFrom`/`headersFrom`
+- browser notifications ต้องมี PWA client เชื่อมอยู่; full Web Push ยังไม่ครบ
+- external connectors ทำงานได้เมื่อกำหนด credential และ endpoint ที่เกี่ยวข้องแล้ว
+
+## เอกสารเพิ่มเติม
+
+- [Cherry Gateway, Nodes, Sessions, and MCP](docs/CHERRY_GATEWAY_MCP.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Authentication](docs/AUTHENTICATION.md)
+- [Enterprise Workforce](docs/ENTERPRISE_WORKFORCE.md)
+- [Report Studio](docs/REPORT_STUDIO.md)
+- [Infrastructure Agent](docs/INFRA_AGENT.md)
+- [Markets](docs/MARKETS.md)
+- [Security Operations](docs/SECURITYOPS-DATABASE.md)
+- [Windows Desktop Agent](docs/WINDOWS_DESKTOP_AGENT.md)
+
+## Product direction
+
+ลำดับงานถัดไปคือ PostgreSQL/Redis control plane, realtime node transport, per-node execution policy, browser automation, Microsoft 365, Web Push และ device-native workers เพื่อขยาย CherryAgent จาก single-Gateway MVP ไปสู่ distributed operating agent เต็มรูปแบบ
