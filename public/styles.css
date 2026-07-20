@@ -571,6 +571,10 @@ textarea { min-height: 76px; resize: vertical; }
   background: rgba(255, 255, 255, .9);
   box-shadow: 0 15px 34px rgba(36, 80, 140, .065);
 }
+.chat-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px max(16px, calc((100% - 860px) / 2)); border-bottom: 1px solid var(--line); background: #f8fbff; }
+.chat-toolbar > div { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
+.chat-toolbar strong { color: #315b8d; font-size: 11px; }
+.chat-toolbar span { overflow: hidden; color: #8292aa; font: 9px ui-monospace, SFMono-Regular, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .chat { flex: 1; display: flex; flex-direction: column; gap: 14px; overflow: auto; padding: 24px max(16px, calc((100% - 860px) / 2)); }
 .message { max-width: 82%; padding: 13px 15px; border-radius: 16px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .message.assistant, .assistant { align-self: flex-start; color: #365173; border: 1px solid #d4e5fb; border-top-left-radius: 5px; background: #eef6ff; }

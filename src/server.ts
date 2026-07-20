@@ -15,7 +15,7 @@ import type { PendingApproval } from "./safety/ApprovalGate.js";
 import type { ReportMapping, ReportTemplate } from "./reports/types.js";
 
 const publicRoot = resolve(process.cwd(), "public");
-const { agent, tools, approvalGate, usage, officeInbox, reports, connectors, planner, engineer, scheduler, channelGateway, orchestrator, agenticStore } = await createRuntime();
+const { agent, tools, approvalGate, usage, officeInbox, reports, chatLogs, connectors, planner, engineer, scheduler, channelGateway, orchestrator, agenticStore } = await createRuntime();
 const auth = new AuthService(config.auth);
 if (config.auth.enabled) await auth.initialize();
 
@@ -228,6 +228,17 @@ function requiredString(input: Record<string, unknown>, key: string): string {
 function optionalString(input: Record<string, unknown>, key: string): string | undefined {
   const value = input[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function chatIdValue(value: unknown, fallback = crypto.randomUUID()): string {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value !== "string") throw new Error("chatId must be a string");
+  const chatId = value.trim();
+  if (!chatId) return fallback;
+  if (chatId.length > 160 || /[\u0000-\u001f\u007f]/.test(chatId)) {
+    throw new Error("chatId must be a short printable identifier");
+  }
+  return chatId;
 }
 
 function stringArray(value: unknown): string[] | undefined {
@@ -1193,6 +1204,18 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && pathname === "/chat/logs") {
+      const rawLimit = Number(url.searchParams.get("limit") ?? "100");
+      const requestedChatId = url.searchParams.get("chatId")?.trim() || undefined;
+      const entries = await chatLogs.list({
+        tenantId,
+        ...(requestedChatId ? { chatId: chatIdValue(requestedChatId) } : {}),
+        ...(Number.isFinite(rawLimit) ? { limit: rawLimit } : {}),
+      });
+      json(res, 200, { ok: true, chatId: requestedChatId ?? null, entries });
+      return;
+    }
+
     if (req.method === "GET" && pathname === "/approvals") {
       const approvals = approvalGate.list("pending").filter((item) =>
         item.context.tenantId === tenantId
@@ -1247,15 +1270,69 @@ const server = createServer(async (req, res) => {
         return;
       }
 
-      const sessionId = typeof body.sessionId === "string" ? body.sessionId : crypto.randomUUID();
+      const chatId = chatIdValue(body.chatId ?? body.sessionId);
+      const sessionId = chatId;
       const userId = requestIdentity?.user.id ?? "web-user";
-      const result = await agent.run(message, {
-        sessionId,
-        userId,
-        tenantId,
-        traceId,
-      });
-      json(res, 200, { ok: true, ...result });
+      const startedAt = Date.now();
+      try {
+        const result = await agent.run(message, {
+          sessionId,
+          userId,
+          tenantId,
+          traceId,
+        });
+        let logStored = true;
+        try {
+          await chatLogs.append({
+            id: traceId,
+            chatId,
+            traceId,
+            sessionId,
+            tenantId,
+            userId,
+            status: "succeeded",
+            createdAt: new Date(startedAt).toISOString(),
+            completedAt: new Date().toISOString(),
+            durationMs: Date.now() - startedAt,
+            steps: result.steps,
+            correctness: {
+              status: result.correctness.status,
+              confidence: result.correctness.confidence,
+              passes: result.correctness.passes,
+            },
+          });
+        } catch (error) {
+          logStored = false;
+          console.warn(`[ChatLogStore] failed to persist ${traceId}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        json(res, 200, {
+          ok: true,
+          chatId,
+          logId: traceId,
+          traceId,
+          logStored,
+          ...result,
+        });
+      } catch (error) {
+        try {
+          await chatLogs.append({
+            id: traceId,
+            chatId,
+            traceId,
+            sessionId,
+            tenantId,
+            userId,
+            status: "failed",
+            createdAt: new Date(startedAt).toISOString(),
+            completedAt: new Date().toISOString(),
+            durationMs: Date.now() - startedAt,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        } catch (logError) {
+          console.warn(`[ChatLogStore] failed to persist failed request ${traceId}: ${logError instanceof Error ? logError.message : String(logError)}`);
+        }
+        throw error;
+      }
       return;
     }
 

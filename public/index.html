@@ -326,6 +326,13 @@
 
     <section class="view" id="view-chat">
       <div class="chat-shell">
+        <div class="chat-toolbar">
+          <div>
+            <strong>Chat session</strong>
+            <span id="chatIdentity">Chat ID: —</span>
+          </div>
+          <button class="ghost-button" id="newChatButton" type="button">แชตใหม่</button>
+        </div>
         <div class="chat" id="chat"><div class="message assistant">Cherry พร้อมค่ะ ส่งงานหรือปัญหามาได้เลย เดี๋ยวเชอรี่ลงมือผ่านเครื่องมือ ตรวจผล แล้วสรุปหลักฐานให้ตรง ๆ นะคะ</div></div>
         <div class="composer-wrap"><form class="composer" id="composer"><textarea id="message" rows="1" placeholder="บอก Cherry ว่าอยากให้ช่วยอะไร..." autocomplete="off"></textarea><button class="send" id="sendButton" aria-label="ส่งข้อความ">↑</button></form></div>
       </div>
@@ -351,7 +358,7 @@
     </form>
   </section>
 </div>
-<script type="module" src="/app.js?v=report-studio-1"></script>
-<script type="module" src="/chat-trace.js?v=execution-trail-1"></script>
+<script type="module" src="/app.js?v=chat-logs-1"></script>
+<script type="module" src="/chat-trace.js?v=chat-logs-1"></script>
 </body>
 </html>
