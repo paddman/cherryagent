@@ -43,6 +43,13 @@ export function createLinuxTools(linux: LinuxSshClient): AgentTool[] {
       execute: async () => linux.status(),
     },
     {
+      name: "linux_probe_connection",
+      description: "Safely verify SSH connectivity to the configured Linux host and return the remote hostname, current user, kernel, and uptime. Use this for a bare ssh/connect request before any mutating command.",
+      risk: "safe",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+      execute: async () => linux.execute("printf '%s\\n' '--- hostname ---'; hostname; printf '%s\\n' '--- user ---'; id -un; printf '%s\\n' '--- kernel ---'; uname -sr; printf '%s\\n' '--- uptime ---'; uptime"),
+    },
+    {
       name: "linux_exec",
       description: "Execute an arbitrary shell command on the configured Linux host over SSH. This is a high-impact escape hatch: prefer narrower Linux tools for diagnostics and only use raw execution when necessary. Always inspect exitCode, stdout and stderr, then verify consequential changes separately.",
       risk: "dangerous",
