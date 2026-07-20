@@ -32,7 +32,7 @@ export type SecurityEventRecord = Required<Pick<SecurityEvent, "id" | "observedA
 };
 
 export type SecurityEventStoreOptions = {
-  host?: string;
+  host?: string | (() => string);
   batchSize?: number;
   flushIntervalMs?: number;
   memoryLimit?: number;
@@ -67,7 +67,7 @@ function safeConfidence(value: number | undefined): number | null {
 
 export class SecurityEventStore {
   readonly #database: DatabaseCliHub;
-  readonly #host: string;
+  readonly #host: () => string;
   readonly #batchSize: number;
   readonly #flushIntervalMs: number;
   readonly #memoryLimit: number;
@@ -80,7 +80,10 @@ export class SecurityEventStore {
 
   constructor(database: DatabaseCliHub, options: SecurityEventStoreOptions = {}) {
     this.#database = database;
-    this.#host = options.host?.trim() || "unknown";
+    const configuredHost = options.host;
+    this.#host = typeof configuredHost === "function"
+      ? configuredHost
+      : () => configuredHost?.trim() || "unknown";
     this.#batchSize = Math.min(5_000, Math.max(1, Math.floor(options.batchSize ?? 250)));
     this.#flushIntervalMs = Math.min(60_000, Math.max(50, Math.floor(options.flushIntervalMs ?? 500)));
     this.#memoryLimit = Math.min(100_000, Math.max(100, Math.floor(options.memoryLimit ?? 10_000)));
@@ -116,7 +119,7 @@ export class SecurityEventStore {
     const record: SecurityEventRecord = {
       id: event.id?.trim() || randomUUID(),
       observedAt: event.observedAt ?? new Date().toISOString(),
-      host: event.host?.trim() || this.#host,
+      host: event.host?.trim() || this.#host().trim() || "unknown",
       category: event.category.trim(),
       severity: safeSeverity(event.severity),
       action: event.action?.trim() || null,

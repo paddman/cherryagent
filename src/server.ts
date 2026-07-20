@@ -15,7 +15,7 @@ import type { PendingApproval } from "./safety/ApprovalGate.js";
 import type { ReportMapping, ReportTemplate } from "./reports/types.js";
 
 const publicRoot = resolve(process.cwd(), "public");
-const { agent, tools, approvalGate, usage, officeInbox, reports, chatLogs, connectors, planner, engineer, scheduler, channelGateway, orchestrator, agenticStore } = await createRuntime();
+const { agent, tools, approvalGate, usage, officeInbox, reports, chatLogs, linuxSsh, connectors, planner, engineer, scheduler, channelGateway, orchestrator, agenticStore } = await createRuntime();
 const auth = new AuthService(config.auth);
 if (config.auth.enabled) await auth.initialize();
 
@@ -603,12 +603,14 @@ const server = createServer(async (req, res) => {
         planner.getDashboard(new Date(), tenantId),
         engineer.getDashboard(tenantId),
       ]);
+      const linuxSshStatus = linuxSsh.status();
       json(res, 200, {
         ok: true,
         name: "CherryAgent",
         model: config.llm.model,
         tools: tools.list().length,
         connectors,
+        linuxSsh: { configured: linuxSshStatus.configured, ready: linuxSshStatus.ready },
         auth: { enabled: config.auth.enabled },
         pendingApprovals: approvalGate.list("pending").filter((item) => item.context.tenantId === tenantId).length,
         planner: {
@@ -625,6 +627,73 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "GET" && pathname === "/tools") {
       json(res, 200, tools.list().map(({ name, description, risk, parameters }) => ({ name, description, risk, parameters })));
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/linux/ssh") {
+      json(res, 200, { ok: true, status: linuxSsh.status() });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/linux/ssh/scan") {
+      if (config.auth.enabled && requestIdentity?.user.role !== "admin") {
+        json(res, 403, { ok: false, error: "SSH login configuration requires admin role" });
+        return;
+      }
+      const body = await readJson(req);
+      const port = body.port === undefined ? undefined : Number(body.port);
+      const hostKey = await linuxSsh.scanHostKey(requiredString(body, "host"), port);
+      audit.log({
+        action: "ssh_host_key_scan",
+        ...(requestIdentity ? { userId: requestIdentity.user.id, sessionId: requestIdentity.sessionId } : {}),
+        traceId,
+        resultStatus: "ok",
+        metadata: { host: hostKey.host, port: hostKey.port, keyType: hostKey.keyType, fingerprint: hostKey.fingerprint },
+      });
+      json(res, 200, { ok: true, hostKey });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/linux/ssh/connect") {
+      if (config.auth.enabled && requestIdentity?.user.role !== "admin") {
+        json(res, 403, { ok: false, error: "SSH login configuration requires admin role" });
+        return;
+      }
+      const body = await readJson(req);
+      const authentication = requiredString(body, "authentication");
+      if (!["private-key", "password", "ssh-agent"].includes(authentication)) {
+        throw new Error("authentication must be private-key, password, or ssh-agent");
+      }
+      const result = await linuxSsh.configureAndConnect({
+        host: requiredString(body, "host"),
+        username: requiredString(body, "username"),
+        ...(body.port !== undefined ? { port: Number(body.port) } : {}),
+        authentication: authentication as "private-key" | "password" | "ssh-agent",
+        ...(typeof body.privateKey === "string" ? { privateKey: body.privateKey } : {}),
+        ...(typeof body.password === "string" ? { password: body.password } : {}),
+        hostKey: requiredString(body, "hostKey"),
+        expectedFingerprint: requiredString(body, "expectedFingerprint"),
+      });
+      audit.log({
+        action: "ssh_profile_connect",
+        ...(requestIdentity ? { userId: requestIdentity.user.id, sessionId: requestIdentity.sessionId } : {}),
+        traceId,
+        resultStatus: "ok",
+        metadata: {
+          host: result.status.host,
+          username: result.status.username,
+          port: result.status.port,
+          authentication: result.status.authentication,
+          fingerprint: result.status.fingerprint,
+        },
+      });
+      json(res, 200, { ok: true, status: result.status, probe: result.probe });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/linux/ssh/login") {
+      const result = await linuxSsh.probe();
+      json(res, 200, { ok: true, status: result.status, probe: result.probe });
       return;
     }
 

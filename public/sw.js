@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cherryagent-shell-v8';
+const CACHE_NAME = 'cherryagent-shell-v9';
 const APP_SHELL = ['/', '/index.html', '/app.js', '/styles.css', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -31,6 +31,7 @@ self.addEventListener('fetch', (event) => {
     || url.pathname.startsWith('/office/')
     || url.pathname.startsWith('/usage/')
     || url.pathname.startsWith('/reports')
+    || url.pathname.startsWith('/linux/')
     || url.pathname === '/workspace/context'
   ) {
     event.respondWith(fetch(request));

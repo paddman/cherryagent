@@ -141,7 +141,7 @@ export function createSecurityRuntime(linux: LinuxSshClient): SecurityRuntime {
   });
   const policy = SecurityPolicyEngine.fromEnvironment();
   const events = new SecurityEventStore(database, {
-    host: process.env.CHERRY_LINUX_SSH_HOST ?? "unknown",
+    host: () => linux.status().host ?? "unknown",
     batchSize: integerEnv("CHERRY_SECURITY_DB_BATCH_SIZE", 250),
     flushIntervalMs: integerEnv("CHERRY_SECURITY_DB_FLUSH_INTERVAL_MS", 500),
     memoryLimit: integerEnv("CHERRY_SECURITY_DB_MEMORY_LIMIT", 10_000),

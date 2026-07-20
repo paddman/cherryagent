@@ -21,6 +21,7 @@ import { ProxmoxClient } from "./connectors/proxmox/ProxmoxClient.js";
 import { CryptoExchangeHub } from "./connectors/trading/CryptoExchangeHub.js";
 import { VsphereClient } from "./connectors/vsphere/VsphereClient.js";
 import { EngineerLoopEngine } from "./engineer/EngineerLoopEngine.js";
+import { getLinuxRuntimeProfiles, initializeLinuxRuntime } from "./linuxRuntime.js";
 import { OpenAICompatibleProvider } from "./llm/OpenAICompatibleProvider.js";
 import { MemoryStore } from "./memory/MemoryStore.js";
 import { NotificationDispatcher } from "./planner/NotificationDispatcher.js";
@@ -100,10 +101,12 @@ export async function createRuntime(): Promise<{
   officeInbox: OfficeInboxService;
   reports: ReportStudioService;
   chatLogs: ChatLogStore;
+  linuxSsh: ReturnType<typeof getLinuxRuntimeProfiles>;
   channelGateway: ChannelGateway;
   connectors: RuntimeConnectors;
 }> {
   await mkdir(config.workspaceRoot, { recursive: true });
+  await initializeLinuxRuntime();
 
   const approvalGate = new ApprovalGate(config.agent.autoApprove);
   const usage = new UsageStore(config.usageFile);
@@ -305,6 +308,7 @@ export async function createRuntime(): Promise<{
     officeInbox,
     reports,
     chatLogs,
+    linuxSsh: getLinuxRuntimeProfiles(),
     channelGateway,
     connectors: {
       google: google.isConfigured(),
