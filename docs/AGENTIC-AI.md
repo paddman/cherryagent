@@ -452,5 +452,5 @@ A real order still requires `trade_place_spot_order`, which is `dangerous`, and 
 - CLI-based database adapters require local database client binaries.
 - Shared evidence can contain sensitive tool output; production deployments should add per-user authorization, encryption at rest, and retention policies.
 - The current persistent state is JSON and is designed for a single-node MVP. Multi-node production should move agentic state, handoffs, locks, evidence, and work queues to PostgreSQL/Redis.
-- The API server still needs authentication and a restrictive CORS policy before internet exposure.
+- The API server has local-first bearer authentication, but internet exposure still requires a production identity provider, restrictive CORS, TLS, and multi-tenant authorization.
 - Approval state is in memory and should be moved to persistent storage before production-grade autonomous operations.

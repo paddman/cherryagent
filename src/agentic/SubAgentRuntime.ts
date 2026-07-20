@@ -2,6 +2,7 @@ import type { ChatMessage, LlmProvider, ToolContext, ToolDefinition } from "../c
 import type { ToolExecutionResult, ToolRegistry } from "../tools/ToolRegistry.js";
 import { getAgentDirectory } from "./AgentDirectory.js";
 import type { AgentRole } from "./AgenticStateStore.js";
+import type { AgentTaskProgress } from "./AgenticStateStore.js";
 import { SharedEvidenceBus } from "./SharedEvidenceBus.js";
 
 export type SubAgentTraceEvent = {
@@ -87,6 +88,10 @@ export class SubAgentRuntime {
     private readonly maxSteps: number,
   ) {}
 
+  get configuredMaxSteps(): number {
+    return Math.max(1, this.maxSteps);
+  }
+
   async run(input: {
     runId: string;
     taskId: string;
@@ -94,6 +99,7 @@ export class SubAgentRuntime {
     objective: string;
     sharedEvidence: string;
     context: ToolContext;
+    onProgress?: (progress: AgentTaskProgress) => Promise<void> | void;
   }): Promise<SubAgentResult> {
     const role = input.role;
     const worker = await getAgentDirectory().selectForRole(role);
@@ -137,13 +143,16 @@ Rules:
     let blocked = false;
     let hadFailure = false;
 
-    for (let step = 1; step <= Math.max(1, this.maxSteps); step += 1) {
+    const maxSteps = Math.max(1, this.maxSteps);
+    for (let step = 1; step <= maxSteps; step += 1) {
+      await input.onProgress?.({ step, maxSteps, phase: "thinking" });
       const completion = await this.provider.complete({ messages, tools: definitions });
       messages.push(completion.message);
       trace.push({ step, type: "assistant", detail: completion.message });
       const calls = completion.message.tool_calls ?? [];
 
       if (!calls.length) {
+        await input.onProgress?.({ step, maxSteps, phase: "finalizing" });
         return {
           workerId: worker.id,
           workerName: worker.name,
@@ -158,6 +167,7 @@ Rules:
       }
 
       for (const call of calls) {
+        await input.onProgress?.({ step, maxSteps, phase: "tool", activeTool: call.function.name });
         let result: ToolExecutionResult;
         try {
           if (!allowedNames.has(call.function.name)) {
@@ -208,8 +218,8 @@ Rules:
       workerId: worker.id,
       workerName: worker.name,
       role,
-      answer: `[${worker.name} · ${role}] Stopped after ${this.maxSteps} sub-agent steps before a final answer was produced.`,
-      steps: this.maxSteps,
+      answer: `[${worker.name} · ${role}] Stopped after ${maxSteps} sub-agent steps before a final answer was produced.`,
+      steps: maxSteps,
       trace,
       evidenceIds,
       blocked,

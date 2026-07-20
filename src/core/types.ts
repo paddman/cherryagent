@@ -24,7 +24,9 @@ export type ChatMessage =
 export type ToolContext = {
   sessionId: string;
   userId: string;
+  tenantId: string;
   workspaceRoot: string;
+  traceId?: string;
 };
 
 export type AgentTool = {
@@ -47,6 +49,7 @@ export type ToolDefinition = {
 export type CompletionRequest = {
   messages: ChatMessage[];
   tools: ToolDefinition[];
+  signal?: AbortSignal;
 };
 
 export type CompletionResult = {

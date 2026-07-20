@@ -27,6 +27,11 @@ import { PlannerStore } from "./planner/PlannerStore.js";
 import { SchedulerEngine } from "./planner/SchedulerEngine.js";
 import { ApprovalGate } from "./safety/ApprovalGate.js";
 import { ToolRegistry } from "./tools/ToolRegistry.js";
+import { UsageStore } from "./usage/UsageStore.js";
+import { OfficeInboxStore } from "./office/OfficeInboxStore.js";
+import { OfficeInboxService } from "./office/OfficeInboxService.js";
+import { ReportStore } from "./reports/ReportStore.js";
+import { ReportStudioService } from "./reports/ReportStudioService.js";
 import { createAgenticTools } from "./tools/builtin/agentic.js";
 import { createBidPilotTools } from "./tools/builtin/bidpilot.js";
 import { createCognitionTools } from "./tools/builtin/cognition.js";
@@ -38,6 +43,7 @@ import { createInfraTools } from "./tools/builtin/infra.js";
 import { createMarketTools } from "./tools/builtin/markets.js";
 import { createOfficeTools } from "./tools/builtin/office.js";
 import { createPlannerTools } from "./tools/builtin/planner.js";
+import { createReportTools } from "./tools/builtin/reports.js";
 import { systemTools } from "./tools/builtin/system.js";
 
 export type RuntimeConnectors = {
@@ -89,17 +95,22 @@ export async function createRuntime(): Promise<{
   orchestrator: AgentOrchestrator;
   scheduler: SchedulerEngine;
   approvalGate: ApprovalGate;
+  usage: UsageStore;
+  officeInbox: OfficeInboxService;
+  reports: ReportStudioService;
   channelGateway: ChannelGateway;
   connectors: RuntimeConnectors;
 }> {
   await mkdir(config.workspaceRoot, { recursive: true });
 
   const approvalGate = new ApprovalGate(config.agent.autoApprove);
-  const tools = new ToolRegistry(approvalGate);
+  const usage = new UsageStore(config.usageFile);
+  const tools = new ToolRegistry(approvalGate, undefined, usage);
   const memory = new MemoryStore(config.memoryFile);
   const planner = new PlannerStore(config.plannerFile);
   const engineer = new EngineerLoopEngine(config.engineerFile);
   const agenticStore = new AgenticStateStore(config.agentic.file);
+  await agenticStore.recoverInterruptedRuns();
   const cognitionStore = new CognitiveStore(config.cognition.file);
   const evidence = new SharedEvidenceBus(agenticStore);
   const handoffs = new AgentHandoffProtocol(agenticStore);
@@ -113,6 +124,16 @@ export async function createRuntime(): Promise<{
     tokenEndpoint: config.google.tokenEndpoint,
   });
   const google = new GoogleWorkspaceClient(googleAuth);
+  const officeInbox = new OfficeInboxService(new OfficeInboxStore(config.officeInboxFile), google, planner);
+  const provider = new OpenAICompatibleProvider(config.llm);
+  const reports = new ReportStudioService(
+    new ReportStore(config.reports.file),
+    agenticStore,
+    provider,
+    { workspaceRoot: config.workspaceRoot, retentionDays: config.reports.retentionDays, maxBytes: config.reports.maxBytes, maxRows: config.reports.maxRows, maxColumns: config.reports.maxColumns, modelTimeoutMs: config.reports.modelTimeoutMs },
+  );
+  await reports.pruneExpired();
+  await reports.recoverInterrupted();
 
   const proxmox = new ProxmoxClient({
     baseUrl: config.infra.proxmox.baseUrl ?? "",
@@ -171,6 +192,7 @@ export async function createRuntime(): Promise<{
     ...createBidPilotTools(bidPilot),
     ...createOfficeTools(memory),
     ...createPlannerTools(planner),
+    ...createReportTools(reports),
     ...createEngineerTools(engineer),
     ...createInfraTools(proxmox, vsphere),
     ...createDatabaseTools(database),
@@ -180,7 +202,6 @@ export async function createRuntime(): Promise<{
     tools.register(tool);
   }
 
-  const provider = new OpenAICompatibleProvider(config.llm);
   const orchestrator = new AgentOrchestrator(provider, agenticStore, evidence, handoffs, tools, {
     maxTasks: config.agentic.maxTasks,
     maxRounds: config.agentic.maxRounds,
@@ -225,6 +246,12 @@ export async function createRuntime(): Promise<{
     maxSteps: config.agent.maxSteps,
     correctnessMaxPasses: config.agent.correctnessMaxPasses,
     workspaceRoot: config.workspaceRoot,
+    unavailableToolPrefixes: [
+      ...(!google.isConfigured() ? ["gmail_", "calendar_", "drive_"] : []),
+      ...(!proxmox.isConfigured() ? ["proxmox_"] : []),
+      ...(!vsphere.isConfigured() ? ["vsphere_"] : []),
+      ...(!config.database.postgresUrl && !config.database.mysqlUrl && !config.database.sqlitePath && !config.database.redisUrl ? ["db_"] : []),
+    ],
   });
 
   const channelGateway = new ChannelGateway(async (message) => {
@@ -240,6 +267,7 @@ export async function createRuntime(): Promise<{
     const result = await agent.run(userMessage, {
       sessionId: sessionParts.join(":"),
       userId: `${message.channel}:${message.senderId}`,
+      tenantId: "org-default",
     });
 
     return {
@@ -270,6 +298,9 @@ export async function createRuntime(): Promise<{
     orchestrator,
     scheduler,
     approvalGate,
+    usage,
+    officeInbox,
+    reports,
     channelGateway,
     connectors: {
       google: google.isConfigured(),

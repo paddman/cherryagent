@@ -1,5 +1,5 @@
-const CACHE_NAME = 'cherryagent-shell-v3';
-const APP_SHELL = ['/', '/index.html', '/app.js', '/manifest.webmanifest', '/icon.svg'];
+const CACHE_NAME = 'cherryagent-shell-v8';
+const APP_SHELL = ['/', '/index.html', '/app.js', '/styles.css', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
@@ -24,7 +24,14 @@ self.addEventListener('fetch', (event) => {
     url.pathname === '/health' ||
     url.pathname === '/tools' ||
     url.pathname === '/approvals' ||
-    url.pathname.startsWith('/planner/')
+    url.pathname.startsWith('/planner/') ||
+    url.pathname.startsWith('/orchestrator/') ||
+    url.pathname.startsWith('/engineer/') ||
+    url.pathname.startsWith('/auth/')
+    || url.pathname.startsWith('/office/')
+    || url.pathname.startsWith('/usage/')
+    || url.pathname.startsWith('/reports')
+    || url.pathname === '/workspace/context'
   ) {
     event.respondWith(fetch(request));
     return;

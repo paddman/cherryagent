@@ -7,7 +7,7 @@ import type { RiskLevel } from "../core/types.js";
 // ============================================================================
 // AuditLogger — บันทึกทุกการกระทำในระบบลง PostgreSQL
 // Phase 1: hook เข้า ToolRegistry.execute + HTTP request lifecycle
-// Phase 3: จะใช้ต่อกับ auth layer (user/session จริงจาก Keycloak)
+// Auth identity is supplied by the local-first HTTP auth layer; PostgreSQL-backed identity can be added later.
 // ============================================================================
 
 /**

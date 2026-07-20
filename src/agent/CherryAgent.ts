@@ -1,5 +1,8 @@
 import type { ChatMessage, LlmProvider, ToolContext } from "../core/types.js";
+import { resolve } from "node:path";
+import { DEFAULT_TENANT_ID } from "../tenancy/constants.js";
 import type { ToolExecutionResult, ToolRegistry } from "../tools/ToolRegistry.js";
+import { routeToolNames } from "../tools/ToolRouter.js";
 import { CorrectnessLoop, type CorrectnessReview, type CorrectnessStatus } from "./CorrectnessLoop.js";
 
 export type AgentTraceEvent = {
@@ -20,6 +23,7 @@ export type CherryAgentOptions = {
   maxSteps: number;
   correctnessMaxPasses: number;
   workspaceRoot: string;
+  unavailableToolPrefixes?: string[];
 };
 
 const SYSTEM_PROMPT = `You are CherryAgent, an elite AI office secretary, planner, engineer, operations agent, market analyst, database agent, and multi-agent orchestrator.
@@ -57,6 +61,7 @@ Operating rules:
 28. For PostgreSQL, MySQL, SQLite, and Redis, inspect configured connections and schema before complex queries. Use read-only database tools for reads and EXPLAIN. Data mutations and destructive/schema-changing operations must stay behind external or dangerous approval.
 29. Never smuggle multiple SQL statements into one database tool call, and never use a read-only database tool for mutation.
 30. When a multi-agent run ends blocked or failed, report the blocker honestly and preserve the evidence/handoff trail for resumption or review.
+31. For Report Studio questions, use report_list_reports and report_get_report to explain KPI from stored aggregate evidence. Use report_regenerate only when the user asks to change mapping or rebuild; never ask for or invent raw uploaded rows.
 
 You can operate in Thai or English. Match the user's language.`;
 
@@ -123,12 +128,14 @@ export class CherryAgent {
 
   async run(
     userMessage: string,
-    identity: { sessionId?: string; userId?: string } = {},
+    identity: { sessionId?: string; userId?: string; tenantId?: string; traceId?: string } = {},
   ): Promise<AgentRunResult> {
     const context: ToolContext = {
       sessionId: identity.sessionId ?? crypto.randomUUID(),
       userId: identity.userId ?? "local-user",
-      workspaceRoot: this.options.workspaceRoot,
+      tenantId: identity.tenantId ?? DEFAULT_TENANT_ID,
+      workspaceRoot: resolve(this.options.workspaceRoot, identity.tenantId ?? DEFAULT_TENANT_ID),
+      ...(identity.traceId ? { traceId: identity.traceId } : {}),
     };
 
     const messages: ChatMessage[] = [
@@ -136,6 +143,8 @@ export class CherryAgent {
       { role: "user", content: userMessage },
     ];
     const trace: AgentTraceEvent[] = [];
+    const routedToolNames = routeToolNames(userMessage, this.tools.list(), this.options.unavailableToolPrefixes ?? []);
+    const routedDefinitions = this.tools.definitions(routedToolNames);
     let correctnessPasses = 0;
     let revisedAfterReview = false;
     let lastReview: CorrectnessReview | undefined;
@@ -143,7 +152,7 @@ export class CherryAgent {
     for (let step = 1; step <= this.options.maxSteps; step += 1) {
       const completion = await this.provider.complete({
         messages,
-        tools: this.tools.definitions(),
+        tools: routedDefinitions,
       });
       messages.push(completion.message);
       trace.push({ step, type: "assistant", detail: completion.message });

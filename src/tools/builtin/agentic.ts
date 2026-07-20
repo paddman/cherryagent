@@ -166,6 +166,7 @@ export function createAgenticTools(input: {
         const preferred = stringArray(args.preferredRoles, "preferredRoles")?.map(parseRole);
         return input.orchestrator.runGoal({
           goal: requiredString(args, "goal"),
+          tenantId: context.tenantId,
           ...(preferred?.length ? { preferredRoles: preferred } : {}),
         }, context);
       },
@@ -180,7 +181,7 @@ export function createAgenticTools(input: {
         required: ["runId"],
         additionalProperties: false,
       },
-      execute: async (args) => input.orchestrator.getRun(requiredString(args, "runId")),
+      execute: async (args, context) => input.orchestrator.getRun(requiredString(args, "runId"), context.tenantId),
     },
     {
       name: "orchestrator_list_runs",
@@ -191,14 +192,14 @@ export function createAgenticTools(input: {
         properties: { limit: { type: "number", minimum: 1, maximum: 500 } },
         additionalProperties: false,
       },
-      execute: async (args) => input.orchestrator.listRuns(optionalInteger(args.limit, 50, 1, 500)),
+      execute: async (args, context) => input.orchestrator.listRuns(optionalInteger(args.limit, 50, 1, 500), context.tenantId),
     },
     {
       name: "orchestrator_get_dashboard",
       description: "Get aggregate counts for agentic runs, handoffs, shared evidence, and active delegated tasks.",
       risk: "safe",
       parameters: { type: "object", properties: {}, additionalProperties: false },
-      execute: async () => input.orchestrator.dashboard(),
+      execute: async (_args, context) => input.orchestrator.dashboard(context.tenantId),
     },
     {
       name: "agent_create_handoff",

@@ -51,16 +51,21 @@ Already included:
 - Installable responsive PWA
 - Docker support
 - CI type checking and build
+- Local-first authentication with scrypt password hashing, bearer sessions, audit events, and viewer/user/admin roles
+- Cherry Report Studio: `.xlsx`/`.csv` upload, deterministic KPI/charts, aggregate-only AI insight, Thai PDF, evidence, and tenant isolation
 
 ## PWA work surfaces
 
-The dashboard has five primary work surfaces:
+The dashboard has eight work surfaces:
 
 1. **Dashboard** — today, overdue work, active work, waiting work, reminders, alerts, quick planning, and timeline.
-2. **Flow board** — drag work across `inbox`, `planned`, `doing`, `waiting`, and `done`.
-3. **Reminder center** — create recurring schedules, inspect next runs, pause/resume schedules, read alerts, and snooze notifications.
-4. **Engineer** — inspect active technical loops, current phase, iteration budget, evidence, outcomes, and learned runbooks.
-5. **Ask Cherry** — natural-language tool calling across planner, engineer, Gmail, Calendar, Drive, files, memory, approvals, and other tools.
+2. **Report Studio** — upload Excel/CSV or run a built-in sales sample, then inspect KPI, SVG charts, quality warnings, evidence, and a Thai PDF.
+3. **Flow board** — drag work across `inbox`, `planned`, `doing`, `waiting`, and `done`.
+4. **Office Inbox** — sync Gmail messages, triage them into tenant-scoped work items, and track usage credits.
+5. **Reminder center** — create recurring schedules, inspect next runs, pause/resume schedules, read alerts, and snooze notifications.
+6. **Engineer** — inspect active technical loops, current phase, iteration budget, evidence, outcomes, and learned runbooks.
+7. **Deploy Flow (Advanced)** — launch an asynchronous Agent workflow, inspect the dependency topology, and follow live task/evidence progress over SSE.
+8. **Ask Cherry** — natural-language tool calling across routed report, planner, engineer, connector, file, and memory tool packs.
 
 ---
 
@@ -433,6 +438,18 @@ Short-lived testing:
 CHERRY_GOOGLE_ACCESS_TOKEN=temporary-access-token
 ```
 
+## CherryAgent API authentication
+
+Authentication is enabled by default. Set the initial admin credentials before the first server boot:
+
+```env
+CHERRY_AUTH_ENABLED=true
+CHERRY_AUTH_ADMIN_EMAIL=padd@cherrydeskx.com
+CHERRY_AUTH_ADMIN_PASSWORD=use-a-unique-password-with-at-least-12-characters
+```
+
+CherryAgent stores local users and hashed session state in `.cherry/auth.json`. See [`docs/AUTHENTICATION.md`](docs/AUTHENTICATION.md) for login, bearer-token API calls, roles, and the local development opt-out.
+
 ---
 
 # API
@@ -444,6 +461,82 @@ curl http://localhost:8787/health
 ```
 
 The response includes model, tool count, connectors, scheduler state, planner counts, Engineer Loop counts, and pending approvals.
+
+All application API routes require `Authorization: Bearer <token>` when authentication is enabled. `/health` remains public for monitoring; see [`docs/AUTHENTICATION.md`](docs/AUTHENTICATION.md).
+
+## Report Studio
+
+Create a sample report without any connector setup:
+
+```bash
+curl -X POST http://localhost:8787/reports/sample \
+  -H 'Authorization: Bearer <token>' \
+  -H 'content-type: application/json' \
+  -d '{}'
+```
+
+Upload a real workbook:
+
+```bash
+curl -X POST http://localhost:8787/reports \
+  -H 'Authorization: Bearer <token>' \
+  -F 'file=@sales.xlsx' \
+  -F 'template=auto'
+```
+
+Generation runs asynchronously through `ingest → profile → analyze → visualize → pdf → verify`. Follow progress at `GET /reports/:id/events`, inspect the report at `GET /reports/:id`, and download the verified artifact at `GET /reports/:id/pdf`. Raw rows remain in the tenant workspace; only schema and aggregates are sent to the narrative model. See [`docs/REPORT_STUDIO.md`](docs/REPORT_STUDIO.md).
+
+## Deploy Flow topology
+
+Start an asynchronous dependency-aware Agent workflow:
+
+```bash
+curl -X POST http://localhost:8787/orchestrator/runs \
+  -H 'Authorization: Bearer <token>' \
+  -H 'content-type: application/json' \
+  -d '{"goal":"Inspect the CherryAgent health endpoint and summarize verified findings","preferredRoles":["engineer"]}'
+```
+
+Inspect a run with `GET /orchestrator/runs/RUN_ID`. The live topology stream is available at `GET /orchestrator/runs/RUN_ID/events` as Server-Sent Events. Each task exposes its dependency IDs, status, progress step, active tool, handoff, and evidence records.
+
+Every workflow has a traceable identity chain:
+
+```text
+jobId  →  runId + traceId  →  taskId + spanId  →  logId + sequence
+```
+
+Optional tags can be sent when starting a run:
+
+```bash
+curl -X POST http://localhost:8787/orchestrator/runs \
+  -H 'Authorization: Bearer <token>' \
+  -H 'content-type: application/json' \
+  -d '{"goal":"Build a sales report","tags":["excel","report","urgent"]}'
+```
+
+The run snapshot includes recent structured logs. For a dedicated timeline use `GET /orchestrator/runs/RUN_ID/logs`; filter with `taskId`, `since`, and `limit`. Each log contains action, level, tool, step/maxSteps, tags, and compact event data. Logs are persisted in `.cherry/agentic.json` and also stream through the run SSE channel as `log.created` events.
+
+## Enterprise workspace and Office Inbox
+
+Cherry’s first enterprise wedge is **Inbox-to-Execution**: turn incoming work into an owned, scheduled task with a traceable result. The current control plane is tenant-aware and exposes organization context, RBAC, usage credits, and Office Inbox APIs:
+
+```bash
+curl http://localhost:8787/workspace/context \
+  -H 'Authorization: Bearer <token>'
+
+curl http://localhost:8787/office/inbox \
+  -H 'Authorization: Bearer <token>'
+
+curl -X POST http://localhost:8787/office/inbox/sync \
+  -H 'Authorization: Bearer <token>' \
+  -H 'content-type: application/json' \
+  -d '{"query":"in:inbox newer_than:7d","maxResults":25}'
+
+curl http://localhost:8787/usage/dashboard \
+  -H 'Authorization: Bearer <token>'
+```
+
+Usage is measured as workflow/agent credits rather than exposing model token cost. The default pilot budget is 10,000 credits per tenant per calendar month; admins can update it with `POST /usage/budget`. See [`docs/ENTERPRISE_WORKFORCE.md`](docs/ENTERPRISE_WORKFORCE.md) for the tenant boundary, pilot wedge, and PostgreSQL migration contract.
 
 ## Engineer dashboard
 
@@ -542,7 +635,7 @@ External and dangerous actions require approval. Engineer Loop tracking does not
 # Current limitations
 
 - Engineer Loop currently orchestrates whatever real tools are installed. To perform SSH, Proxmox, VMware, Kubernetes, browser automation, or database repair, those tool packs must be added.
-- Engineer and planner state currently use local JSON, suitable for a single-node MVP. Multi-user production should move state, locks, audit logs, and queues to PostgreSQL/Redis.
+- The current pilot runtime persists tenant-scoped control-plane state in local JSON, suitable for a single-node MVP. The PostgreSQL/RLS schema contract is in [`database/postgres/001_enterprise_control_plane.sql`](database/postgres/001_enterprise_control_plane.sql); repositories, locks, audit logs, queues, and SSE fan-out should move to PostgreSQL/Redis before multi-node production.
 - Browser notifications require a connected PWA client; full Web Push for completely disconnected clients is not yet implemented.
 - Email, LINE, Slack, and webhook delivery require corresponding configuration.
 - Notification delivery results are logged but not yet persisted as a per-channel delivery history on each alert.
@@ -551,9 +644,9 @@ External and dangerous actions require approval. Engineer Loop tracking does not
 
 Priority next layers:
 
-1. SSH + Proxmox + VMware + Docker + Kubernetes engineer tools
-2. Playwright browser automation
-3. PostgreSQL/Redis state, locks, queues, and audit logs
+1. PostgreSQL/Redis repositories, locks, queues, audit export, and tenant isolation enforcement
+2. SSH + Proxmox + VMware + Docker + Kubernetes engineer tools
+3. Playwright browser automation
 4. Google Docs, Sheets, Slides
 5. Microsoft 365, Teams, Outlook, OneDrive
 6. PDF/DOCX/XLSX/PPTX generation and editing

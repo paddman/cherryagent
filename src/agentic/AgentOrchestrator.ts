@@ -176,24 +176,50 @@ export class AgentOrchestrator {
     this.subAgents = new SubAgentRuntime(provider, tools, evidence, Math.max(1, options.subAgentMaxSteps));
   }
 
-  async runGoal(input: { goal: string; preferredRoles?: AgentRole[] }, context: ToolContext): Promise<AgenticRun> {
+  async runGoal(input: { goal: string; tenantId?: string; preferredRoles?: AgentRole[]; tags?: string[]; traceId?: string }, context: ToolContext): Promise<AgenticRun> {
     const goal = input.goal.trim();
     if (!goal) throw new Error("Goal is required");
-    const run = await this.store.createRun(goal);
+    const run = await this.store.createRun(goal, {
+      ...(input.tenantId ? { tenantId: input.tenantId } : {}),
+      ...(input.tags ? { tags: input.tags } : {}),
+      ...(input.traceId ? { traceId: input.traceId } : {}),
+    });
+
+    return await this.executeRun(run.id, input, context);
+  }
+
+  async startGoal(input: { goal: string; tenantId?: string; preferredRoles?: AgentRole[]; tags?: string[]; traceId?: string }, context: ToolContext): Promise<AgenticRun> {
+    const goal = input.goal.trim();
+    if (!goal) throw new Error("Goal is required");
+    const run = await this.store.createRun(goal, {
+      ...(input.tenantId ? { tenantId: input.tenantId } : {}),
+      ...(input.tags ? { tags: input.tags } : {}),
+      ...(input.traceId ? { traceId: input.traceId } : {}),
+    });
+    void this.executeRun(run.id, input, context);
+    return run;
+  }
+
+  private async executeRun(
+    runId: string,
+    input: { goal: string; preferredRoles?: AgentRole[] },
+    context: ToolContext,
+  ): Promise<AgenticRun> {
+    const goal = input.goal.trim();
 
     try {
       const plan = await this.planGoal(goal, input.preferredRoles);
-      await this.store.addTasks(run.id, plan);
+      await this.store.addTasks(runId, plan);
 
       let finalCritique: CriticReview | undefined;
       for (let round = 1; round <= this.maxRounds; round += 1) {
-        await this.store.setRunRound(run.id, round);
-        await this.executePendingTasks(run.id, context);
-        const current = await this.store.getRun(run.id);
+        await this.store.setRunRound(runId, round);
+        await this.executePendingTasks(runId, context);
+        const current = await this.store.getRun(runId);
         finalCritique = await this.criticReview(current);
-        await this.store.setRunCritique(run.id, finalCritique);
+        await this.store.setRunCritique(runId, finalCritique);
         await this.evidence.publish({
-          runId: run.id,
+          runId,
           agent: "critic",
           kind: "decision",
           claim: `Critic verdict: ${finalCritique.verdict}. ${finalCritique.summary}`,
@@ -204,22 +230,22 @@ export class AgentOrchestrator {
         if (finalCritique.verdict === "pass" || finalCritique.verdict === "blocked") break;
         if (round >= this.maxRounds || !finalCritique.additionalTasks.length) break;
 
-        const latest = await this.store.getRun(run.id);
+        const latest = await this.store.getRun(runId);
         const remaining = Math.max(0, this.maxTasks - latest.tasks.length);
         if (!remaining) break;
         const extra = finalCritique.additionalTasks.slice(0, remaining).map((task, index) => ({
           ...task,
           key: `r${round + 1}-${sanitizeKey(task.key, `task-${index + 1}`)}`,
         }));
-        await this.store.addTasks(run.id, extra);
+        await this.store.addTasks(runId, extra);
       }
 
-      const afterTasks = await this.store.getRun(run.id);
+      const afterTasks = await this.store.getRun(runId);
       const synthesis = await this.synthesize(afterTasks, finalCritique);
       const verification = await this.verify(afterTasks, synthesis);
-      await this.store.setRunVerification(run.id, verification);
+      await this.store.setRunVerification(runId, verification);
       await this.evidence.publish({
-        runId: run.id,
+        runId,
         agent: "verifier",
         kind: "verification",
         claim: `Verifier verdict: ${verification.verdict} at ${verification.confidence.toFixed(0)}% confidence.`,
@@ -230,7 +256,7 @@ export class AgentOrchestrator {
       const finalAnswer = verification.verdict === "revise" && verification.revisedAnswer
         ? verification.revisedAnswer
         : synthesis;
-      const latest = await this.store.getRun(run.id);
+      const latest = await this.store.getRun(runId);
       const blockedTasks = latest.tasks.filter((task) => task.status === "blocked");
       const failedTasks = latest.tasks.filter((task) => task.status === "failed");
       const status = finalCritique?.verdict === "blocked" || blockedTasks.length
@@ -241,7 +267,7 @@ export class AgentOrchestrator {
       const blockedReason = status === "blocked"
         ? finalCritique?.summary ?? blockedTasks.map((task) => task.error ?? task.objective).join(" | ")
         : undefined;
-      return await this.store.completeRun(run.id, {
+      return await this.store.completeRun(runId, {
         status,
         synthesis: finalAnswer,
         ...(blockedReason ? { blockedReason } : {}),
@@ -249,27 +275,27 @@ export class AgentOrchestrator {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await this.evidence.publish({
-        runId: run.id,
+        runId: runId,
         agent: "orchestrator",
         kind: "error",
         claim: `Orchestration failed: ${message}`,
         data: message,
         confidence: 1,
       });
-      return await this.store.completeRun(run.id, { status: "failed", synthesis: `Orchestration failed: ${message}` });
+      return await this.store.completeRun(runId, { status: "failed", synthesis: `Orchestration failed: ${message}` });
     }
   }
 
-  getRun(id: string): Promise<AgenticRun> {
-    return this.store.getRun(id);
+  getRun(id: string, tenantId?: string): Promise<AgenticRun> {
+    return this.store.getRun(id, tenantId);
   }
 
-  listRuns(limit = 50): Promise<AgenticRun[]> {
-    return this.store.listRuns(undefined, limit);
+  listRuns(limit = 50, tenantId?: string): Promise<AgenticRun[]> {
+    return this.store.listRuns(undefined, limit, tenantId);
   }
 
-  dashboard(): ReturnType<AgenticStateStore["dashboard"]> {
-    return this.store.dashboard();
+  dashboard(tenantId?: string): ReturnType<AgenticStateStore["dashboard"]> {
+    return this.store.dashboard(tenantId);
   }
 
   private async planGoal(goal: string, preferredRoles?: AgentRole[]): Promise<PlannedTask[]> {
@@ -310,16 +336,23 @@ Goal: ${goal}`;
       const pending = run.tasks.filter((task) => task.status === "pending");
       if (!pending.length) return;
 
-      for (const task of pending) {
-        const failedDependency = task.dependsOn
-          .map((id) => byId.get(id))
-          .find((dependency) => dependency && ["failed", "blocked", "skipped"].includes(dependency.status));
-        if (failedDependency) {
-          await this.store.updateTask(runId, task.id, {
-            status: "skipped",
-            error: `Dependency ${failedDependency.key} ended as ${failedDependency.status}`,
-            completedAt: new Date().toISOString(),
-          });
+      let skippedAny = true;
+      while (skippedAny) {
+        skippedAny = false;
+        const current = await this.store.getRun(runId);
+        const currentById = new Map(current.tasks.map((task) => [task.id, task]));
+        for (const task of current.tasks.filter((item) => item.status === "pending")) {
+          const failedDependency = task.dependsOn
+            .map((id) => currentById.get(id))
+            .find((dependency) => dependency && ["failed", "blocked", "skipped"].includes(dependency.status));
+          if (failedDependency) {
+            await this.store.updateTask(runId, task.id, {
+              status: "skipped",
+              error: `Dependency ${failedDependency.key} ended as ${failedDependency.status}`,
+              completedAt: new Date().toISOString(),
+            });
+            skippedAny = true;
+          }
         }
       }
 
@@ -351,6 +384,8 @@ Goal: ${goal}`;
     await this.store.updateTask(runId, task.id, {
       status: "running",
       handoffId: handoff.id,
+      progress: { step: 0, maxSteps: this.subAgents.configuredMaxSteps, phase: "starting" },
+      lastActivityAt: new Date().toISOString(),
       startedAt: new Date().toISOString(),
     });
 
@@ -364,7 +399,15 @@ Goal: ${goal}`;
         context: {
           sessionId: `${parentContext.sessionId}:${runId}:${task.id}`,
           userId: parentContext.userId,
+          tenantId: (await this.store.getRun(runId)).tenantId,
           workspaceRoot: parentContext.workspaceRoot,
+          traceId: (await this.store.getRun(runId)).traceId,
+        },
+        onProgress: async (progress) => {
+          await this.store.updateTask(runId, task.id, {
+            progress,
+            lastActivityAt: new Date().toISOString(),
+          });
         },
       });
       const status = result.blocked ? "blocked" : result.failed ? "failed" : "succeeded";

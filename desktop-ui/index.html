@@ -40,10 +40,10 @@
 
         <form id="loginForm" class="login-form">
           <label>อีเมล
-            <div class="field"><span>✉</span><input type="email" value="paddman@example.com" autocomplete="username" required /></div>
+            <div class="field"><span>✉</span><input id="email" type="email" placeholder="padd@cherrydeskx.com" autocomplete="username" required /></div>
           </label>
           <label>รหัสผ่าน
-            <div class="field"><span>⌁</span><input id="password" type="password" value="cherryagent" autocomplete="current-password" required /><button type="button" id="togglePassword" class="icon-only">◉</button></div>
+            <div class="field"><span>⌁</span><input id="password" type="password" autocomplete="current-password" required /><button type="button" id="togglePassword" class="icon-only">◉</button></div>
           </label>
 
           <div class="form-row">
@@ -52,8 +52,7 @@
           </div>
 
           <button class="primary-button wide" type="submit">เข้า workspace <span>→</span></button>
-          <div class="divider"><span>หรือ</span></div>
-          <button class="secondary-button wide" id="localWorkspaceBtn" type="button">▣ เปิด local workspace</button>
+          <p id="loginError" class="login-error" role="alert"></p>
         </form>
 
         <div class="secure-pill"><span class="dot green"></span> Cherry ทำงานในเครื่อง · action เสี่ยงต้องขออนุมัติ</div>
@@ -62,9 +61,33 @@
   </main>
 
   <script>
-    const openWorkspace = () => window.location.href = './dashboard.html';
-    document.getElementById('loginForm').addEventListener('submit', event => { event.preventDefault(); openWorkspace(); });
-    document.getElementById('localWorkspaceBtn').addEventListener('click', openWorkspace);
+    const backendUrl = 'http://127.0.0.1:8787';
+    const authTokenKey = 'cherry-auth-token';
+    document.getElementById('loginForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const submit = event.currentTarget.querySelector('button[type="submit"]');
+      const error = document.getElementById('loginError');
+      submit.disabled = true;
+      error.textContent = '';
+      try {
+        const response = await fetch(`${backendUrl}/auth/login`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            email: document.getElementById('email').value.trim(),
+            password: document.getElementById('password').value,
+          }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || !body.ok || !body.token) throw new Error(body.error || 'เข้าสู่ระบบไม่สำเร็จ');
+        sessionStorage.setItem(authTokenKey, body.token);
+        window.location.href = './dashboard.html';
+      } catch (loginError) {
+        error.textContent = loginError instanceof Error ? loginError.message : 'เข้าสู่ระบบไม่สำเร็จ';
+      } finally {
+        submit.disabled = false;
+      }
+    });
     document.getElementById('togglePassword').addEventListener('click', () => {
       const input = document.getElementById('password');
       input.type = input.type === 'password' ? 'text' : 'password';

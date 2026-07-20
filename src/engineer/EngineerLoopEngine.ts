@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { DEFAULT_TENANT_ID } from "../tenancy/constants.js";
 
 export type EngineerPhase = "plan" | "execute" | "observe" | "diagnose" | "patch" | "test" | "verify" | "learn";
 export type EngineerLoopStatus = "running" | "blocked" | "succeeded" | "failed" | "aborted";
@@ -18,6 +19,7 @@ export type EngineerLoopEvent = {
 
 export type EngineerLoop = {
   id: string;
+  tenantId: string;
   objective: string;
   successCriteria: string[];
   status: EngineerLoopStatus;
@@ -40,6 +42,7 @@ export type EngineerLoop = {
 
 export type EngineerRunbook = {
   id: string;
+  tenantId: string;
   loopId: string;
   title: string;
   objective: string;
@@ -54,7 +57,7 @@ export type EngineerRunbook = {
 };
 
 type EngineerData = {
-  version: 1;
+  version: 2;
   loops: EngineerLoop[];
   runbooks: EngineerRunbook[];
 };
@@ -87,7 +90,21 @@ const allowedTransitions: Record<EngineerPhase, EngineerPhase[]> = {
 };
 
 function emptyData(): EngineerData {
-  return { version: 1, loops: [], runbooks: [] };
+  return { version: 2, loops: [], runbooks: [] };
+}
+
+function tenant(value?: string): string {
+  return value?.trim() || DEFAULT_TENANT_ID;
+}
+
+function normalizeLoop(loop: EngineerLoop & { tenantId?: string }): EngineerLoop {
+  loop.tenantId = tenant(loop.tenantId);
+  return loop;
+}
+
+function normalizeRunbook(runbook: EngineerRunbook & { tenantId?: string }): EngineerRunbook {
+  runbook.tenantId = tenant(runbook.tenantId);
+  return runbook;
 }
 
 function nowIso(): string {
@@ -113,9 +130,9 @@ export class EngineerLoopEngine {
     try {
       const parsed = JSON.parse(await readFile(this.filePath, "utf8")) as Partial<EngineerData>;
       return {
-        version: 1,
-        loops: Array.isArray(parsed.loops) ? parsed.loops : [],
-        runbooks: Array.isArray(parsed.runbooks) ? parsed.runbooks : [],
+        version: 2,
+        loops: Array.isArray(parsed.loops) ? parsed.loops.map((loop) => normalizeLoop(loop as EngineerLoop & { tenantId?: string })) : [],
+        runbooks: Array.isArray(parsed.runbooks) ? parsed.runbooks.map((runbook) => normalizeRunbook(runbook as EngineerRunbook & { tenantId?: string })) : [],
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptyData();
@@ -154,6 +171,7 @@ export class EngineerLoopEngine {
     maxIterations?: number | undefined;
     planItemId?: string | undefined;
     hypothesis?: string | undefined;
+    tenantId?: string | undefined;
   }): Promise<EngineerLoop> {
     return this.#mutate((data) => {
       const objective = requiredText(input.objective, "objective");
@@ -163,6 +181,7 @@ export class EngineerLoopEngine {
       const now = nowIso();
       const loop: EngineerLoop = {
         id: crypto.randomUUID(),
+        tenantId: tenant(input.tenantId),
         objective,
         successCriteria,
         status: "running",
@@ -182,18 +201,18 @@ export class EngineerLoopEngine {
     });
   }
 
-  async getLoop(id: string): Promise<EngineerLoop> {
+  async getLoop(id: string, tenantId?: string): Promise<EngineerLoop> {
     const data = await this.read();
-    const loop = data.loops.find((candidate) => candidate.id === id);
+    const loop = data.loops.find((candidate) => candidate.id === id && candidate.tenantId === tenant(tenantId));
     if (!loop) throw new Error(`Engineer loop not found: ${id}`);
     return loop;
   }
 
-  async listLoops(status?: EngineerLoopStatus): Promise<EngineerLoop[]> {
+  async listLoops(status?: EngineerLoopStatus, tenantId?: string): Promise<EngineerLoop[]> {
     if (status && !statuses.includes(status)) throw new Error(`Unknown engineer loop status: ${status}`);
     const data = await this.read();
     return data.loops
-      .filter((loop) => !status || loop.status === status)
+      .filter((loop) => loop.tenantId === tenant(tenantId) && (!status || loop.status === status))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
@@ -205,9 +224,10 @@ export class EngineerLoopEngine {
     tool?: string | undefined;
     error?: string | undefined;
     nextPhase?: EngineerPhase | undefined;
+    tenantId?: string | undefined;
   }): Promise<EngineerLoop> {
     return this.#mutate((data) => {
-      const loop = data.loops.find((candidate) => candidate.id === input.loopId);
+      const loop = data.loops.find((candidate) => candidate.id === input.loopId && candidate.tenantId === tenant(input.tenantId));
       if (!loop) throw new Error(`Engineer loop not found: ${input.loopId}`);
       if (loop.status !== "running") throw new Error(`Engineer loop ${loop.id} is ${loop.status}, not running`);
       if (!phases.includes(input.phase)) throw new Error(`Unknown engineer phase: ${input.phase}`);
@@ -252,9 +272,10 @@ export class EngineerLoopEngine {
     loopId: string;
     diagnosis: string;
     nextAction: string;
+    tenantId?: string | undefined;
   }): Promise<EngineerLoop> {
     return this.#mutate((data) => {
-      const loop = data.loops.find((candidate) => candidate.id === input.loopId);
+      const loop = data.loops.find((candidate) => candidate.id === input.loopId && candidate.tenantId === tenant(input.tenantId));
       if (!loop) throw new Error(`Engineer loop not found: ${input.loopId}`);
       if (loop.status !== "running") throw new Error(`Engineer loop ${loop.id} is ${loop.status}, not running`);
       if (loop.iteration >= loop.maxIterations) {
@@ -284,9 +305,9 @@ export class EngineerLoopEngine {
     });
   }
 
-  async blockLoop(id: string, reason: string): Promise<EngineerLoop> {
+  async blockLoop(id: string, reason: string, tenantId?: string): Promise<EngineerLoop> {
     return this.#mutate((data) => {
-      const loop = data.loops.find((candidate) => candidate.id === id);
+      const loop = data.loops.find((candidate) => candidate.id === id && candidate.tenantId === tenant(tenantId));
       if (!loop) throw new Error(`Engineer loop not found: ${id}`);
       if (loop.status !== "running") throw new Error(`Engineer loop ${id} cannot be blocked from status ${loop.status}`);
       loop.status = "blocked";
@@ -296,9 +317,9 @@ export class EngineerLoopEngine {
     });
   }
 
-  async resumeLoop(id: string, note?: string): Promise<EngineerLoop> {
+  async resumeLoop(id: string, note?: string, tenantId?: string): Promise<EngineerLoop> {
     return this.#mutate((data) => {
-      const loop = data.loops.find((candidate) => candidate.id === id);
+      const loop = data.loops.find((candidate) => candidate.id === id && candidate.tenantId === tenant(tenantId));
       if (!loop) throw new Error(`Engineer loop not found: ${id}`);
       if (loop.status !== "blocked") throw new Error(`Engineer loop ${id} is not blocked`);
       loop.status = "running";
@@ -326,9 +347,10 @@ export class EngineerLoopEngine {
     rollback?: string | undefined;
     prevention?: string[] | undefined;
     runbookTitle?: string | undefined;
+    tenantId?: string | undefined;
   }): Promise<{ loop: EngineerLoop; runbook: EngineerRunbook }> {
     return this.#mutate((data) => {
-      const loop = data.loops.find((candidate) => candidate.id === input.loopId);
+      const loop = data.loops.find((candidate) => candidate.id === input.loopId && candidate.tenantId === tenant(input.tenantId));
       if (!loop) throw new Error(`Engineer loop not found: ${input.loopId}`);
       if (loop.status !== "running") throw new Error(`Engineer loop ${loop.id} is ${loop.status}, not running`);
       if (loop.phase !== "learn") throw new Error(`Engineer loop ${loop.id} must reach learn phase before completion`);
@@ -357,6 +379,7 @@ export class EngineerLoopEngine {
       const rollback = cleanStrings(input.rollback?.trim() ? [input.rollback.trim()] : [], 20);
       const runbook: EngineerRunbook = {
         id: crypto.randomUUID(),
+        tenantId: loop.tenantId,
         loopId: loop.id,
         title: input.runbookTitle?.trim() || `Engineer loop: ${loop.objective}`,
         objective: loop.objective,
@@ -374,17 +397,17 @@ export class EngineerLoopEngine {
     });
   }
 
-  async failLoop(id: string, reason: string): Promise<EngineerLoop> {
-    return this.#finishLoop(id, "failed", reason);
+  async failLoop(id: string, reason: string, tenantId?: string): Promise<EngineerLoop> {
+    return this.#finishLoop(id, "failed", reason, tenantId);
   }
 
-  async abortLoop(id: string, reason: string): Promise<EngineerLoop> {
-    return this.#finishLoop(id, "aborted", reason);
+  async abortLoop(id: string, reason: string, tenantId?: string): Promise<EngineerLoop> {
+    return this.#finishLoop(id, "aborted", reason, tenantId);
   }
 
-  async #finishLoop(id: string, status: "failed" | "aborted", reason: string): Promise<EngineerLoop> {
+  async #finishLoop(id: string, status: "failed" | "aborted", reason: string, tenantId?: string): Promise<EngineerLoop> {
     return this.#mutate((data) => {
-      const loop = data.loops.find((candidate) => candidate.id === id);
+      const loop = data.loops.find((candidate) => candidate.id === id && candidate.tenantId === tenant(tenantId));
       if (!loop) throw new Error(`Engineer loop not found: ${id}`);
       if (loop.status === "succeeded" || loop.status === "failed" || loop.status === "aborted") {
         throw new Error(`Engineer loop ${id} is already ${loop.status}`);
@@ -398,30 +421,33 @@ export class EngineerLoopEngine {
     });
   }
 
-  async listRunbooks(limit = 50): Promise<EngineerRunbook[]> {
+  async listRunbooks(limit = 50, tenantId?: string): Promise<EngineerRunbook[]> {
     const data = await this.read();
     return data.runbooks
+      .filter((runbook) => runbook.tenantId === tenant(tenantId))
       .slice()
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, Math.min(Math.max(Math.round(limit), 1), 500));
   }
 
-  async getDashboard(): Promise<EngineerDashboard> {
+  async getDashboard(tenantId?: string): Promise<EngineerDashboard> {
     const data = await this.read();
-    const recent = data.loops.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 20);
+    const scopedLoops = data.loops.filter((loop) => loop.tenantId === tenant(tenantId));
+    const scopedRunbooks = data.runbooks.filter((runbook) => runbook.tenantId === tenant(tenantId));
+    const recent = scopedLoops.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 20);
     const active = recent.filter((loop) => loop.status === "running" || loop.status === "blocked");
     return {
       generatedAt: nowIso(),
       stats: {
-        running: data.loops.filter((loop) => loop.status === "running").length,
-        blocked: data.loops.filter((loop) => loop.status === "blocked").length,
-        succeeded: data.loops.filter((loop) => loop.status === "succeeded").length,
-        failed: data.loops.filter((loop) => loop.status === "failed").length,
-        runbooks: data.runbooks.length,
+        running: scopedLoops.filter((loop) => loop.status === "running").length,
+        blocked: scopedLoops.filter((loop) => loop.status === "blocked").length,
+        succeeded: scopedLoops.filter((loop) => loop.status === "succeeded").length,
+        failed: scopedLoops.filter((loop) => loop.status === "failed").length,
+        runbooks: scopedRunbooks.length,
       },
       active,
       recent,
-      runbooks: data.runbooks.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10),
+      runbooks: scopedRunbooks.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10),
     };
   }
 }

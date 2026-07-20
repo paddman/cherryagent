@@ -24,9 +24,10 @@ export function createOfficeTools(memory: MemoryStore): AgentTool[] {
         required: ["title"],
         additionalProperties: false,
       },
-      execute: async (args) =>
+      execute: async (args, context) =>
         memory.createTask({
           title: stringArg(args, "title"),
+          tenantId: context.tenantId,
           ...(typeof args.due === "string" && args.due.trim() ? { due: args.due.trim() } : {}),
         }),
     },
@@ -41,9 +42,9 @@ export function createOfficeTools(memory: MemoryStore): AgentTool[] {
         },
         additionalProperties: false,
       },
-      execute: async (args) => {
+      execute: async (args, context) => {
         const status = args.status === "open" || args.status === "done" ? args.status : undefined;
-        return memory.listTasks(status);
+        return memory.listTasks(status, context.tenantId);
       },
     },
     {
@@ -56,7 +57,7 @@ export function createOfficeTools(memory: MemoryStore): AgentTool[] {
         required: ["id"],
         additionalProperties: false,
       },
-      execute: async (args) => memory.completeTask(stringArg(args, "id")),
+      execute: async (args, context) => memory.completeTask(stringArg(args, "id"), context.tenantId),
     },
     {
       name: "office_save_note",
@@ -71,10 +72,11 @@ export function createOfficeTools(memory: MemoryStore): AgentTool[] {
         required: ["title", "content"],
         additionalProperties: false,
       },
-      execute: async (args) =>
+      execute: async (args, context) =>
         memory.createNote({
           title: stringArg(args, "title"),
           content: stringArg(args, "content"),
+          tenantId: context.tenantId,
         }),
     },
     {
@@ -90,7 +92,7 @@ export function createOfficeTools(memory: MemoryStore): AgentTool[] {
         required: ["key", "value"],
         additionalProperties: false,
       },
-      execute: async (args) => memory.remember(stringArg(args, "key"), stringArg(args, "value")),
+      execute: async (args, context) => memory.remember(stringArg(args, "key"), stringArg(args, "value"), context.tenantId),
     },
     {
       name: "memory_recall_fact",
@@ -102,7 +104,7 @@ export function createOfficeTools(memory: MemoryStore): AgentTool[] {
         required: ["key"],
         additionalProperties: false,
       },
-      execute: async (args) => ({ key: stringArg(args, "key"), value: await memory.recall(stringArg(args, "key")) }),
+      execute: async (args, context) => ({ key: stringArg(args, "key"), value: await memory.recall(stringArg(args, "key"), context.tenantId) }),
     },
   ];
 }
