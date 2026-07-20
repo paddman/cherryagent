@@ -1949,7 +1949,8 @@ $('#composer').addEventListener('submit', async (event) => {
   try {
     const data = await api('/chat', {
       method: 'POST',
-      body: JSON.stringify({ message, chatId }),
+      // Keep sessionId for compatibility with a server process from before per-chat log support.
+      body: JSON.stringify({ message, chatId, sessionId: chatId }),
     });
     if (typeof data.chatId === 'string' && data.chatId !== chatId) {
       chatId = data.chatId;
