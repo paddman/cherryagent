@@ -21,6 +21,8 @@ const state = {
   reportPollTimer: null,
   sshHostKey: null,
   sshStatus: null,
+  nodes: [],
+  nodeBinding: null,
   engineerDashboard: null,
   approvals: [],
   deployRuns: [],
@@ -2091,6 +2093,86 @@ function updateChatIdentity() {
   if (node) node.textContent = `Chat ID: ${chatId}`;
 }
 
+function shellQuote(value) {
+  return `'${String(value).replaceAll("'", `'"'"'`)}'`;
+}
+
+function renderNodeStatus() {
+  const status = $('#nodeConnectionStatus');
+  if (!status) return;
+  const bound = state.nodeBinding?.node;
+  if (bound) {
+    status.textContent = `Node: ${bound.name} · ${bound.online ? 'online' : 'offline'}`;
+    status.classList.toggle('ready', bound.online);
+    return;
+  }
+  const online = state.nodes.filter((node) => node.online).length;
+  status.textContent = state.nodes.length ? `Node: ${online}/${state.nodes.length} online` : 'Node: ยังไม่ได้จับคู่';
+  status.classList.toggle('ready', online > 0);
+}
+
+function renderNodeList() {
+  const list = $('#nodePairList');
+  if (!list) return;
+  list.replaceChildren();
+  if (!state.nodes.length) {
+    const empty = document.createElement('div');
+    empty.className = 'ssh-login-result';
+    empty.textContent = 'ยังไม่มีเครื่องที่จับคู่ สร้าง pairing code แล้วรันคำสั่งบนเครื่องปลายทาง';
+    list.append(empty);
+    return;
+  }
+  for (const node of state.nodes) {
+    const item = document.createElement('div');
+    const bound = state.nodeBinding?.node?.id === node.id;
+    item.className = `node-pair-item${node.online ? ' online' : ''}${bound ? ' bound' : ''}`;
+    const detail = document.createElement('div');
+    const title = document.createElement('strong');
+    title.textContent = `${node.name} · ${node.online ? 'online' : 'offline'}`;
+    const meta = document.createElement('span');
+    meta.textContent = `${node.platform}/${node.arch} · ${node.capabilities.join(', ')} · ${node.id}`;
+    detail.append(title, meta);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = bound ? 'secondary' : 'ghost-button';
+    button.textContent = bound ? 'Bound' : 'Bind chat';
+    button.disabled = bound;
+    button.addEventListener('click', async () => {
+      await api('/nodes/bind', { method: 'POST', body: JSON.stringify({ chatId, nodeId: node.id }) });
+      toast(`Chat ID นี้ผูกกับ ${node.name} แล้ว`);
+      await loadNodes();
+    });
+    item.append(detail, button);
+    list.append(item);
+  }
+}
+
+async function loadNodes() {
+  try {
+    const [nodesData, bindingData] = await Promise.all([
+      api('/nodes'),
+      api(`/nodes/binding?chatId=${encodeURIComponent(chatId)}`),
+    ]);
+    state.nodes = Array.isArray(nodesData.nodes) ? nodesData.nodes : [];
+    state.nodeBinding = bindingData.binding ? bindingData : null;
+    renderNodeStatus();
+    renderNodeList();
+  } catch (error) {
+    console.warn('Could not load Cherry Nodes', error);
+  }
+}
+
+async function loadChatHistory() {
+  try {
+    const data = await api(`/chat/history?chatId=${encodeURIComponent(chatId)}`);
+    if (!Array.isArray(data.messages) || !data.messages.length) return;
+    $('#chat').replaceChildren();
+    for (const message of data.messages) addMessage(message.content, message.role, new Date(message.createdAt).toLocaleString());
+  } catch (error) {
+    console.warn('Could not restore Chat ID history', error);
+  }
+}
+
 function startNewChat() {
   chatId = crypto.randomUUID();
   localStorage.setItem(chatIdStorageKey, chatId);
@@ -2099,10 +2181,46 @@ function startNewChat() {
   welcome.textContent = 'เริ่มแชตใหม่ได้เลยค่ะ ส่งงานหรือปัญหามาได้เลย เดี๋ยวเชอรี่ลงมือผ่านเครื่องมือและเก็บ log แยกตาม Chat ID นี้นะคะ';
   $('#chat').replaceChildren(welcome);
   updateChatIdentity();
+  state.nodeBinding = null;
+  void loadNodes();
 }
 
 updateChatIdentity();
 $('#newChatButton').addEventListener('click', startNewChat);
+$('#nodePairButton').addEventListener('click', async () => {
+  $('#nodePairDialog').showModal();
+  await loadNodes();
+});
+$('#nodePairClose').addEventListener('click', () => $('#nodePairDialog').close());
+$('#nodeRefreshButton').addEventListener('click', () => void loadNodes());
+$('#nodePairCopy').addEventListener('click', async () => {
+  await navigator.clipboard.writeText($('#nodePairCommand').value);
+  toast('คัดลอกคำสั่ง Pair Node แล้ว');
+});
+$('#nodePairForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const button = $('#nodeCreatePairingCode');
+  button.disabled = true;
+  try {
+    const name = $('#nodePairName').value.trim();
+    const workspace = $('#nodePairWorkspace').value.trim() || '.';
+    const data = await api('/nodes/pairing-codes', { method: 'POST', body: JSON.stringify({ name, ttlMinutes: 10 }) });
+    const command = [
+      `CHERRY_GATEWAY_URL=${shellQuote(location.origin)} \\`,
+      `CHERRY_NODE_PAIRING_CODE=${shellQuote(data.pairing.code)} \\`,
+      `CHERRY_NODE_NAME=${shellQuote(name)} \\`,
+      `CHERRY_NODE_WORKSPACE=${shellQuote(workspace)} \\`,
+      'npm run node:agent',
+    ].join('\n');
+    $('#nodePairCommand').value = command;
+    $('#nodePairCommandWrap').hidden = false;
+    toast('สร้าง pairing code แล้ว · หมดอายุใน 10 นาที');
+  } catch (error) {
+    toast(`สร้าง pairing code ไม่สำเร็จ: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    button.disabled = false;
+  }
+});
 
 $('#composer').addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -2238,12 +2356,13 @@ $('#todayDate').textContent = new Date().toLocaleDateString([], { weekday: 'long
 async function startApp() {
   if (appStarted) return;
   appStarted = true;
-  await Promise.all([checkHealth(), loadPlanner(), loadEngineer(), loadApprovals(), loadDeployRuns(), loadOfficeInbox(), loadReports()]);
+  await Promise.all([checkHealth(), loadPlanner(), loadEngineer(), loadApprovals(), loadDeployRuns(), loadOfficeInbox(), loadReports(), loadNodes(), loadChatHistory()]);
   setInterval(loadPlanner, 5000);
   setInterval(loadEngineer, 5000);
   setInterval(loadApprovals, 5000);
   setInterval(loadOfficeInbox, 15000);
   setInterval(checkHealth, 30000);
+  setInterval(loadNodes, 15000);
 }
 
 if (await checkAuthentication()) await startApp();

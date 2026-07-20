@@ -44,6 +44,7 @@ export type AuditAction =
   | "login_failed"
   | "ssh_host_key_scan"
   | "ssh_profile_connect"
+  | "node_pair"
   | "rbac_deny";
 
 export interface AuditEvent {

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cherry Node Operator"
+  short_description: "Operate paired nodes and MCP tools safely"
+  default_prompt: "Use $cherry-node-operator to pair a node and complete this remote task."

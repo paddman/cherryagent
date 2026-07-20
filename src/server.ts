@@ -13,9 +13,11 @@ import type { PlanPriority, PlanStatus } from "./planner/PlannerStore.js";
 import type { NotificationChannel, ScheduleSpec } from "./planner/schedule.js";
 import type { PendingApproval } from "./safety/ApprovalGate.js";
 import type { ReportMapping, ReportTemplate } from "./reports/types.js";
+import type { RiskLevel } from "./core/types.js";
+import type { McpHttpConfig, McpStdioConfig } from "./mcp/McpServerStore.js";
 
 const publicRoot = resolve(process.cwd(), "public");
-const { agent, tools, approvalGate, usage, officeInbox, reports, chatLogs, linuxSsh, connectors, planner, engineer, scheduler, channelGateway, orchestrator, agenticStore } = await createRuntime();
+const { agent, tools, approvalGate, usage, officeInbox, reports, chatLogs, chatSessions, nodes, mcp, skills, linuxSsh, connectors, planner, engineer, scheduler, channelGateway, orchestrator, agenticStore } = await createRuntime();
 const auth = new AuthService(config.auth);
 if (config.auth.enabled) await auth.initialize();
 
@@ -73,6 +75,13 @@ function bearerToken(req: IncomingMessage): string | undefined {
   const header = req.headers.authorization;
   if (typeof header !== "string") return undefined;
   const match = header.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || undefined;
+}
+
+function nodeToken(req: IncomingMessage): string | undefined {
+  const header = req.headers.authorization;
+  if (typeof header !== "string") return undefined;
+  const match = header.match(/^Node\s+(.+)$/i);
   return match?.[1]?.trim() || undefined;
 }
 
@@ -245,6 +254,57 @@ function stringArray(value: unknown): string[] | undefined {
   if (value === undefined) return undefined;
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) throw new Error("Expected string array");
   return value.map((item) => item.trim()).filter(Boolean);
+}
+
+function stringRecord(value: unknown, label: string): Record<string, string> | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.some(([, item]) => typeof item !== "string" || !item.trim())) throw new Error(`${label} values must be environment variable names`);
+  return Object.fromEntries(entries.map(([key, item]) => [key, (item as string).trim()]));
+}
+
+function riskValue(value: unknown, fallback: RiskLevel = "external"): RiskLevel {
+  return typeof value === "string" && ["safe", "write", "external", "dangerous"].includes(value)
+    ? value as RiskLevel
+    : fallback;
+}
+
+function riskRecord(value: unknown): Record<string, RiskLevel> | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("toolRisks must be an object");
+  const result: Record<string, RiskLevel> = {};
+  for (const [name, risk] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof risk !== "string" || !["safe", "write", "external", "dangerous"].includes(risk)) {
+      throw new Error(`Invalid risk for MCP tool '${name}'`);
+    }
+    result[name] = risk as RiskLevel;
+  }
+  return result;
+}
+
+function mcpConnection(body: Record<string, unknown>): McpStdioConfig | McpHttpConfig {
+  const transport = requiredString(body, "transport");
+  if (transport === "stdio") {
+    const args = stringArray(body.args);
+    const cwd = optionalString(body, "cwd");
+    const envFrom = stringRecord(body.envFrom, "envFrom");
+    return {
+      transport,
+      command: requiredString(body, "command"),
+      ...(args ? { args } : {}),
+      ...(cwd ? { cwd } : {}),
+      ...(envFrom ? { envFrom } : {}),
+    };
+  }
+  if (transport === "streamable-http") {
+    const url = requiredString(body, "url");
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error("MCP URL must use http or https");
+    const headersFrom = stringRecord(body.headersFrom, "headersFrom");
+    return { transport, url, ...(headersFrom ? { headersFrom } : {}) };
+  }
+  throw new Error("transport must be stdio or streamable-http");
 }
 
 function parseStatus(value: unknown): PlanStatus | undefined {
@@ -569,8 +629,14 @@ const server = createServer(async (req, res) => {
     if (await serveStatic(req, res)) return;
 
     const channelWebhookMatch = pathname.match(/^\/channels\/([^/]+)\/webhook$/);
+    const isNodeAgentApi = req.method === "POST" && (
+      pathname === "/nodes/pair"
+      || pathname === "/nodes/agent/poll"
+      || /^\/nodes\/agent\/tasks\/[^/]+\/complete$/.test(pathname)
+    );
     const isPublicApi = (req.method === "GET" && pathname === "/health")
-      || (req.method === "POST" && Boolean(channelWebhookMatch));
+      || (req.method === "POST" && Boolean(channelWebhookMatch))
+      || isNodeAgentApi;
 
     if (config.auth.enabled && !isPublicApi) {
       requestIdentity = auth.authenticate(bearerToken(req));
@@ -598,6 +664,59 @@ const server = createServer(async (req, res) => {
 
     const tenantId = requestIdentity?.user.tenantId ?? "org-default";
 
+    if (req.method === "POST" && pathname === "/nodes/pair") {
+      const body = await readJson(req);
+      const capabilities = stringArray(body.capabilities) ?? [];
+      const workspace = optionalString(body, "workspace");
+      const result = await nodes.pair({
+        code: requiredString(body, "code"),
+        name: requiredString(body, "name"),
+        platform: requiredString(body, "platform"),
+        arch: requiredString(body, "arch"),
+        version: requiredString(body, "version"),
+        capabilities,
+        ...(workspace ? { workspace } : {}),
+      });
+      audit.log({
+        action: "node_pair",
+        traceId,
+        resultStatus: "ok",
+        metadata: { nodeId: result.node.id, tenantId: result.node.tenantId, name: result.node.name, capabilities },
+      });
+      json(res, 201, { ok: true, ...result });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/nodes/agent/poll") {
+      const node = await nodes.authenticate(nodeToken(req) ?? "");
+      if (!node) {
+        json(res, 401, { ok: false, error: "Cherry Node authentication failed" });
+        return;
+      }
+      const task = await nodes.poll(node.id);
+      json(res, 200, { ok: true, task: task ?? null });
+      return;
+    }
+
+    const nodeCompleteMatch = pathname.match(/^\/nodes\/agent\/tasks\/([^/]+)\/complete$/);
+    if (req.method === "POST" && nodeCompleteMatch) {
+      const node = await nodes.authenticate(nodeToken(req) ?? "");
+      if (!node) {
+        json(res, 401, { ok: false, error: "Cherry Node authentication failed" });
+        return;
+      }
+      const body = await readJson(req);
+      if (!body.result || typeof body.result !== "object" || Array.isArray(body.result)) throw new Error("result must be an object");
+      const rawResult = body.result as Record<string, unknown>;
+      const task = await nodes.complete(node.id, decodeURIComponent(nodeCompleteMatch[1] ?? ""), {
+        ok: rawResult.ok === true,
+        ...(rawResult.output !== undefined ? { output: rawResult.output } : {}),
+        ...(typeof rawResult.error === "string" ? { error: rawResult.error } : {}),
+      });
+      json(res, 200, { ok: true, taskId: task.id, status: task.status });
+      return;
+    }
+
     if (req.method === "GET" && pathname === "/health") {
       const [dashboard, engineerDashboard] = await Promise.all([
         planner.getDashboard(new Date(), tenantId),
@@ -611,6 +730,8 @@ const server = createServer(async (req, res) => {
         tools: tools.list().length,
         connectors,
         linuxSsh: { configured: linuxSshStatus.configured, ready: linuxSshStatus.ready },
+        nodes: { paired: (await nodes.listNodes(tenantId)).length },
+        mcp: { servers: mcp.statuses(tenantId).length, connected: mcp.statuses(tenantId).filter((item) => item.status === "connected").length },
         auth: { enabled: config.auth.enabled },
         pendingApprovals: approvalGate.list("pending").filter((item) => item.context.tenantId === tenantId).length,
         planner: {
@@ -627,6 +748,92 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "GET" && pathname === "/tools") {
       json(res, 200, tools.list().map(({ name, description, risk, parameters }) => ({ name, description, risk, parameters })));
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/skills") {
+      json(res, 200, { ok: true, skills: (await skills.list()).map(({ name, description }) => ({ name, description })) });
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/nodes") {
+      json(res, 200, { ok: true, nodes: await nodes.listNodes(tenantId) });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/nodes/pairing-codes") {
+      if (config.auth.enabled && requestIdentity?.user.role !== "admin") {
+        json(res, 403, { ok: false, error: "Node pairing requires admin role" });
+        return;
+      }
+      const body = await readJson(req);
+      const ttlMinutes = typeof body.ttlMinutes === "number" ? body.ttlMinutes : 10;
+      const name = optionalString(body, "name");
+      const pairing = await nodes.createPairingCode({
+        tenantId,
+        ...(name ? { name } : {}),
+        ttlMs: ttlMinutes * 60_000,
+      });
+      json(res, 201, { ok: true, pairing });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/nodes/bind") {
+      const body = await readJson(req);
+      const binding = await nodes.bind(tenantId, chatIdValue(body.chatId), requiredString(body, "nodeId"));
+      json(res, 200, { ok: true, binding });
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/nodes/binding") {
+      const chatId = chatIdValue(url.searchParams.get("chatId"));
+      json(res, 200, { ok: true, chatId, ...(await nodes.binding(tenantId, chatId)) });
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/mcp/servers") {
+      json(res, 200, { ok: true, servers: mcp.statuses(tenantId) });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/mcp/servers") {
+      if (config.auth.enabled && requestIdentity?.user.role !== "admin") {
+        json(res, 403, { ok: false, error: "MCP server registration requires admin role" });
+        return;
+      }
+      const body = await readJson(req);
+      const toolRisks = riskRecord(body.toolRisks);
+      const serverStatus = await mcp.add({
+        tenantId,
+        name: requiredString(body, "name"),
+        enabled: body.enabled !== false,
+        risk: riskValue(body.risk),
+        ...(toolRisks ? { toolRisks } : {}),
+        connection: mcpConnection(body),
+      });
+      json(res, 201, { ok: true, server: serverStatus });
+      return;
+    }
+
+    const mcpReconnectMatch = pathname.match(/^\/mcp\/servers\/([^/]+)\/reconnect$/);
+    if (req.method === "POST" && mcpReconnectMatch) {
+      if (config.auth.enabled && requestIdentity?.user.role !== "admin") {
+        json(res, 403, { ok: false, error: "MCP server management requires admin role" });
+        return;
+      }
+      const status = await mcp.reconnect(decodeURIComponent(mcpReconnectMatch[1] ?? ""), tenantId);
+      json(res, 200, { ok: true, server: status });
+      return;
+    }
+
+    const mcpServerMatch = pathname.match(/^\/mcp\/servers\/([^/]+)$/);
+    if (req.method === "DELETE" && mcpServerMatch) {
+      if (config.auth.enabled && requestIdentity?.user.role !== "admin") {
+        json(res, 403, { ok: false, error: "MCP server management requires admin role" });
+        return;
+      }
+      const removed = await mcp.remove(decodeURIComponent(mcpServerMatch[1] ?? ""), tenantId);
+      json(res, removed ? 200 : 404, { ok: removed });
       return;
     }
 
@@ -1282,6 +1489,18 @@ const server = createServer(async (req, res) => {
         ...(Number.isFinite(rawLimit) ? { limit: rawLimit } : {}),
       });
       json(res, 200, { ok: true, chatId: requestedChatId ?? null, entries });
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/chat/history") {
+      const chatId = chatIdValue(url.searchParams.get("chatId"));
+      json(res, 200, { ok: true, chatId, messages: await chatSessions.history(tenantId, chatId) });
+      return;
+    }
+
+    if (req.method === "DELETE" && pathname === "/chat/history") {
+      const chatId = chatIdValue(url.searchParams.get("chatId"));
+      json(res, 200, { ok: true, chatId, removed: await chatSessions.clear(tenantId, chatId) });
       return;
     }
 

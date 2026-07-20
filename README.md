@@ -53,6 +53,12 @@ Already included:
 - CI type checking and build
 - Local-first authentication with scrypt password hashing, bearer sessions, audit events, and viewer/user/admin roles
 - Cherry Report Studio: `.xlsx`/`.csv` upload, deterministic KPI/charts, aggregate-only AI insight, Thai PDF, evidence, and tenant isolation
+- Persistent per-Chat-ID model sessions with secret redaction and serialized turns
+- Paired Cherry Node execution for remote shell, process, system, and file work
+- Dynamic MCP stdio and Streamable HTTP tools through the official MCP SDK
+- Runtime-loaded `skills/*/SKILL.md` workflows, including `cherry-node-operator`
+
+See [Cherry Gateway, Nodes, Sessions, and MCP](docs/CHERRY_GATEWAY_MCP.md) for pairing, daemon startup, MCP registration, security boundaries, and API examples.
 
 ## PWA work surfaces
 

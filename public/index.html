@@ -332,6 +332,8 @@
             <span id="chatIdentity">Chat ID: —</span>
           </div>
           <div class="chat-toolbar-actions">
+            <span class="ssh-connection-pill" id="nodeConnectionStatus">Node: ยังไม่ได้จับคู่</span>
+            <button class="ghost-button" id="nodePairButton" type="button">Pair Node</button>
             <span class="ssh-connection-pill" id="sshConnectionStatus">SSH: ยังไม่ได้ล็อกอิน</span>
             <button class="ghost-button" id="sshLoginButton" type="button">SSH Login</button>
             <button class="ghost-button" id="newChatButton" type="button">แชตใหม่</button>
@@ -375,6 +377,25 @@
     <div class="ssh-login-actions full"><button class="ghost-button" id="sshLoginCancel" type="button">ยกเลิก</button><button class="primary" id="sshConnectButton" type="submit">2. Login &amp; Save Profile</button></div>
   </form>
 </dialog>
+<dialog class="ssh-login-dialog" id="nodePairDialog">
+  <div class="ssh-login-head">
+    <div><div class="eyebrow">CHERRY EXECUTION NODE</div><h2>เชื่อมเครื่องให้ Cherry ลงมือทำงาน</h2><p>สร้าง code ใช้ครั้งเดียว แล้วรัน Cherry Node บนเครื่องปลายทาง เครื่องจะเชื่อมกลับเข้า Gateway เอง</p></div>
+    <button class="ghost-button" id="nodePairClose" type="button" aria-label="ปิด">×</button>
+  </div>
+  <div class="ssh-login-flow" aria-label="Cherry Node pairing flow">
+    <div class="ssh-login-node active"><i>1</i><span>Gateway</span></div>
+    <div class="ssh-login-node"><i>2</i><span>Pairing code</span></div>
+    <div class="ssh-login-node"><i>3</i><span>Node daemon</span></div>
+    <div class="ssh-login-node"><i>4</i><span>Agent ready</span></div>
+  </div>
+  <form class="ssh-login-form" id="nodePairForm">
+    <div class="field"><label>Node name</label><input id="nodePairName" required placeholder="production-01" /></div>
+    <div class="field"><label>Node workspace</label><input id="nodePairWorkspace" value="/srv/apps" placeholder="/srv/apps" /></div>
+    <div class="field full"><button class="primary" id="nodeCreatePairingCode" type="submit">1. Create one-time pairing code</button></div>
+    <div class="field full node-pair-command" id="nodePairCommandWrap" hidden><label>2. Run this on the target machine</label><textarea id="nodePairCommand" rows="6" readonly></textarea><button class="secondary" id="nodePairCopy" type="button">Copy command</button></div>
+    <div class="field full"><div class="card-head"><div><h3>Paired nodes</h3><div class="card-sub">เลือก Bind เพื่อให้ Chat ID ปัจจุบันส่งงานไปเครื่องนั้น</div></div><button class="ghost-button" id="nodeRefreshButton" type="button">Refresh</button></div><div class="node-pair-list" id="nodePairList"></div></div>
+  </form>
+</dialog>
 <div class="auth-overlay" id="authOverlay" hidden>
   <section class="auth-card" aria-labelledby="authTitle">
     <div class="eyebrow">CHERRY WORKSPACE</div>
@@ -388,7 +409,7 @@
     </form>
   </section>
 </div>
-<script type="module" src="/app.js?v=ssh-login-1"></script>
+<script type="module" src="/app.js?v=cherry-node-1"></script>
 <script type="module" src="/chat-trace.js?v=chat-flow-1"></script>
 </body>
 </html>

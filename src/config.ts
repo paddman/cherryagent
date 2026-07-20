@@ -185,6 +185,20 @@ export const config = {
     file: resolve(process.env.CHERRY_CHAT_LOG_FILE ?? ".cherry/chat-logs.json"),
     maxEntries: Math.max(100, integerEnv("CHERRY_CHAT_LOG_MAX_ENTRIES", 10_000)),
   },
+  chatSessions: {
+    file: resolve(process.env.CHERRY_CHAT_SESSION_FILE ?? ".cherry/chat-sessions.json"),
+    maxMessages: Math.max(10, integerEnv("CHERRY_CHAT_SESSION_MAX_MESSAGES", 80)),
+    maxMessageBytes: Math.max(1_000, integerEnv("CHERRY_CHAT_SESSION_MAX_MESSAGE_BYTES", 24_000)),
+  },
+  nodes: {
+    file: resolve(process.env.CHERRY_NODE_FILE ?? ".cherry/nodes.json"),
+    onlineWindowMs: Math.max(5_000, integerEnv("CHERRY_NODE_ONLINE_WINDOW_MS", 30_000)),
+    taskTimeoutMs: Math.max(1_000, integerEnv("CHERRY_NODE_TASK_TIMEOUT_MS", 60_000)),
+  },
+  mcp: {
+    file: resolve(process.env.CHERRY_MCP_SERVER_FILE ?? ".cherry/mcp-servers.json"),
+  },
+  skillsDirectory: resolve(process.env.CHERRY_SKILLS_DIRECTORY ?? "skills"),
   linuxSsh: {
     profileFile: resolve(process.env.CHERRY_LINUX_SSH_PROFILE_FILE ?? ".cherry/ssh/profile.json"),
     keyDirectory: resolve(process.env.CHERRY_LINUX_SSH_KEY_DIRECTORY ?? ".cherry/ssh"),
