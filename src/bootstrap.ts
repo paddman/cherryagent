@@ -8,6 +8,7 @@ import { ChannelGateway } from "./channels/ChannelGateway.js";
 import { LineAdapter } from "./channels/line/LineAdapter.js";
 import type { ChannelAdapterStatus } from "./channels/types.js";
 import { ChatLogStore } from "./chat/ChatLogStore.js";
+import { AgentSessionStore } from "./chat/AgentSessionStore.js";
 import { CognitiveEngine } from "./cognition/CognitiveEngine.js";
 import { CognitiveStore } from "./cognition/CognitiveStore.js";
 import { config } from "./config.js";
@@ -24,10 +25,14 @@ import { EngineerLoopEngine } from "./engineer/EngineerLoopEngine.js";
 import { getLinuxRuntimeProfiles, initializeLinuxRuntime } from "./linuxRuntime.js";
 import { OpenAICompatibleProvider } from "./llm/OpenAICompatibleProvider.js";
 import { MemoryStore } from "./memory/MemoryStore.js";
+import { McpServerStore } from "./mcp/McpServerStore.js";
+import { McpToolHub } from "./mcp/McpToolHub.js";
+import { CherryNodeGateway } from "./nodes/CherryNodeGateway.js";
 import { NotificationDispatcher } from "./planner/NotificationDispatcher.js";
 import { PlannerStore } from "./planner/PlannerStore.js";
 import { SchedulerEngine } from "./planner/SchedulerEngine.js";
 import { ApprovalGate } from "./safety/ApprovalGate.js";
+import { AgentSkillLoader } from "./skills/AgentSkillLoader.js";
 import { ToolRegistry } from "./tools/ToolRegistry.js";
 import { UsageStore } from "./usage/UsageStore.js";
 import { OfficeInboxStore } from "./office/OfficeInboxStore.js";
@@ -43,6 +48,8 @@ import { fileTools } from "./tools/builtin/files.js";
 import { createGoogleWorkspaceTools } from "./tools/builtin/googleWorkspace.js";
 import { createInfraTools } from "./tools/builtin/infra.js";
 import { createMarketTools } from "./tools/builtin/markets.js";
+import { createMcpManagementTools } from "./tools/builtin/mcp.js";
+import { createNodeTools } from "./tools/builtin/nodes.js";
 import { createOfficeTools } from "./tools/builtin/office.js";
 import { createPlannerTools } from "./tools/builtin/planner.js";
 import { createReportTools } from "./tools/builtin/reports.js";
@@ -101,6 +108,10 @@ export async function createRuntime(): Promise<{
   officeInbox: OfficeInboxService;
   reports: ReportStudioService;
   chatLogs: ChatLogStore;
+  chatSessions: AgentSessionStore;
+  nodes: CherryNodeGateway;
+  mcp: McpToolHub;
+  skills: AgentSkillLoader;
   linuxSsh: ReturnType<typeof getLinuxRuntimeProfiles>;
   channelGateway: ChannelGateway;
   connectors: RuntimeConnectors;
@@ -111,7 +122,16 @@ export async function createRuntime(): Promise<{
   const approvalGate = new ApprovalGate(config.agent.autoApprove);
   const usage = new UsageStore(config.usageFile);
   const chatLogs = new ChatLogStore(config.chatLogs.file, config.chatLogs.maxEntries);
+  const chatSessions = new AgentSessionStore(
+    config.chatSessions.file,
+    config.chatSessions.maxMessages,
+    config.chatSessions.maxMessageBytes,
+  );
+  const nodes = new CherryNodeGateway(config.nodes.file, config.nodes.onlineWindowMs, config.nodes.taskTimeoutMs);
+  const mcpStore = new McpServerStore(config.mcp.file);
+  const skills = new AgentSkillLoader(config.skillsDirectory);
   const tools = new ToolRegistry(approvalGate, undefined, usage);
+  const mcp = new McpToolHub(mcpStore, tools);
   const memory = new MemoryStore(config.memoryFile);
   const planner = new PlannerStore(config.plannerFile);
   const engineer = new EngineerLoopEngine(config.engineerFile);
@@ -204,6 +224,7 @@ export async function createRuntime(): Promise<{
     ...createDatabaseTools(database),
     ...createMarketTools(exchanges, market),
     ...createGoogleWorkspaceTools(google),
+    ...createNodeTools(nodes),
   ]) {
     tools.register(tool);
   }
@@ -227,6 +248,11 @@ export async function createRuntime(): Promise<{
   for (const tool of createCognitionTools(cognition, cognitionStore)) {
     tools.register(tool);
   }
+
+  for (const tool of createMcpManagementTools(mcp)) {
+    tools.register(tool);
+  }
+  await mcp.initialize();
 
   const dispatcher = new NotificationDispatcher(google, {
     ...(config.notifications.emailTo ? { emailTo: config.notifications.emailTo } : {}),
@@ -258,6 +284,8 @@ export async function createRuntime(): Promise<{
       ...(!vsphere.isConfigured() ? ["vsphere_"] : []),
       ...(!config.database.postgresUrl && !config.database.mysqlUrl && !config.database.sqlitePath && !config.database.redisUrl ? ["db_"] : []),
     ],
+    sessionStore: chatSessions,
+    skillLoader: skills,
   });
 
   const channelGateway = new ChannelGateway(async (message) => {
@@ -308,6 +336,10 @@ export async function createRuntime(): Promise<{
     officeInbox,
     reports,
     chatLogs,
+    chatSessions,
+    nodes,
+    mcp,
+    skills,
     linuxSsh: getLinuxRuntimeProfiles(),
     channelGateway,
     connectors: {

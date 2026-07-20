@@ -33,6 +33,15 @@ export class ToolRegistry {
     return this;
   }
 
+  replace(tool: AgentTool): this {
+    this.#tools.set(tool.name, tool);
+    return this;
+  }
+
+  unregister(name: string): boolean {
+    return this.#tools.delete(name);
+  }
+
   list(): AgentTool[] {
     return [...this.#tools.values()];
   }

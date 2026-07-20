@@ -1,6 +1,8 @@
 import type { ChatMessage, LlmProvider, ToolContext } from "../core/types.js";
 import { resolve } from "node:path";
 import { DEFAULT_TENANT_ID } from "../tenancy/constants.js";
+import type { AgentSessionStore } from "../chat/AgentSessionStore.js";
+import type { AgentSkillLoader } from "../skills/AgentSkillLoader.js";
 import type { ToolExecutionResult, ToolRegistry } from "../tools/ToolRegistry.js";
 import { routeToolNames } from "../tools/ToolRouter.js";
 import { CorrectnessLoop, type CorrectnessReview, type CorrectnessStatus } from "./CorrectnessLoop.js";
@@ -24,6 +26,8 @@ export type CherryAgentOptions = {
   correctnessMaxPasses: number;
   workspaceRoot: string;
   unavailableToolPrefixes?: string[];
+  sessionStore?: AgentSessionStore;
+  skillLoader?: AgentSkillLoader;
 };
 
 const SYSTEM_PROMPT = `You are Cherry (เชอรี่), the operating persona of CherryAgent: an elite AI coworker, office secretary, planner, engineer, operations agent, market analyst, database agent, and multi-agent orchestrator.
@@ -37,6 +41,9 @@ Identity and voice:
 6. Never say you lack a capability when a corresponding tool is present in the current tool list. Inspect and use the available tools instead of giving generic tutorials, reminder offers, shell-script offers, or configuration suggestions.
 7. A bare command such as “ssh 203.0.113.10”, “connect server”, or an IP address in an operations context is an action request, not a request for SSH documentation. Call linux_login immediately; do not stop after linux_get_connection_status. If login succeeds, continue with every Linux task the user requested in the same run. If the secure SSH profile is missing, tell the user to open the SSH Login panel and configure credentials there; never ask them to paste a password or private key into chat. Do not use dangerous linux_exec merely to test connectivity and never pretend that a failed login succeeded.
 8. When the user supplies Linux, SSH, service, process, disk, network, port, log, or server language, prefer linux_* tools and the Engineer Loop as appropriate.
+8a. When a Cherry Node is paired, use node_* tools for persistent remote execution. A node task request is an action request: resolve the Chat ID binding, dispatch the requested work, and continue until verified or approval is required. Do not replace execution with a connection-status explanation.
+8b. Treat the Chat ID as a persistent operational session. Use prior session context, and keep the same node binding across messages in that chat.
+8c. MCP tools are real callable integrations. When an mcp_* tool matches the request, call it and report the server/tool result; do not merely explain MCP setup.
 9. For every non-trivial task, make the visible final answer an operational execution report. Show the objective, each action actually taken in order, the tool or system used, the observed result, verification evidence, blockers, and final status. Be detailed enough that an operator can audit or repeat the work.
 10. Visible steps must contain only factual operational summaries and observable evidence. Never reveal hidden chain-of-thought, private scratch work, internal policies, or unsupported assumptions. The UI may expose tool calls and sanitized tool results as an Execution Trail.
 
@@ -129,6 +136,7 @@ Revise the candidate answer or call tools to obtain the missing evidence. Do not
 
 export class CherryAgent {
   private readonly correctnessLoop: CorrectnessLoop;
+  readonly #sessionQueues = new Map<string, Promise<void>>();
 
   constructor(
     private readonly provider: LlmProvider,
@@ -142,16 +150,44 @@ export class CherryAgent {
     userMessage: string,
     identity: { sessionId?: string; userId?: string; tenantId?: string; traceId?: string } = {},
   ): Promise<AgentRunResult> {
+    const tenantId = identity.tenantId ?? DEFAULT_TENANT_ID;
+    const sessionId = identity.sessionId ?? crypto.randomUUID();
+    const queueKey = `${tenantId}\u0000${sessionId}`;
+    const previous = this.#sessionQueues.get(queueKey) ?? Promise.resolve();
+    const operation = previous.catch(() => undefined).then(() => this.runOnce(userMessage, {
+      ...identity,
+      tenantId,
+      sessionId,
+    }));
+    const queueTail = operation.then(() => undefined, () => undefined);
+    this.#sessionQueues.set(queueKey, queueTail);
+    try {
+      return await operation;
+    } finally {
+      if (this.#sessionQueues.get(queueKey) === queueTail) this.#sessionQueues.delete(queueKey);
+    }
+  }
+
+  private async runOnce(
+    userMessage: string,
+    identity: { sessionId: string; userId?: string; tenantId: string; traceId?: string },
+  ): Promise<AgentRunResult> {
     const context: ToolContext = {
-      sessionId: identity.sessionId ?? crypto.randomUUID(),
+      sessionId: identity.sessionId,
       userId: identity.userId ?? "local-user",
-      tenantId: identity.tenantId ?? DEFAULT_TENANT_ID,
-      workspaceRoot: resolve(this.options.workspaceRoot, identity.tenantId ?? DEFAULT_TENANT_ID),
+      tenantId: identity.tenantId,
+      workspaceRoot: resolve(this.options.workspaceRoot, identity.tenantId),
       ...(identity.traceId ? { traceId: identity.traceId } : {}),
     };
 
+    const [history, skillPrompt] = await Promise.all([
+      this.options.sessionStore?.messages(context.tenantId, context.sessionId) ?? [],
+      this.options.skillLoader?.promptFor(userMessage),
+    ]);
     const messages: ChatMessage[] = [
       { role: "system", content: SYSTEM_PROMPT },
+      ...(skillPrompt ? [{ role: "system" as const, content: skillPrompt }] : []),
+      ...history,
       { role: "user", content: userMessage },
     ];
     const trace: AgentTraceEvent[] = [];
@@ -160,6 +196,16 @@ export class CherryAgent {
     let correctnessPasses = 0;
     let revisedAfterReview = false;
     let lastReview: CorrectnessReview | undefined;
+    const finish = async (result: AgentRunResult): Promise<AgentRunResult> => {
+      await this.options.sessionStore?.appendTurn({
+        tenantId: context.tenantId,
+        chatId: context.sessionId,
+        userId: context.userId,
+        userMessage,
+        assistantMessage: result.answer,
+      });
+      return result;
+    };
 
     for (let step = 1; step <= this.options.maxSteps; step += 1) {
       const completion = await this.provider.complete({
@@ -185,16 +231,16 @@ export class CherryAgent {
           trace.push({ step, type: "correctness", name: "correctness_verifier", detail: review });
 
           if (review.verdict === "pass") {
-            return {
+            return finish({
               answer: candidateAnswer,
               steps: step,
               trace,
               correctness: correctnessStatus(review, correctnessPasses, revisedAfterReview),
-            };
+            });
           }
 
           if (correctnessPasses >= this.options.correctnessMaxPasses) {
-            return {
+            return finish({
               answer: candidateAnswer,
               steps: step,
               trace,
@@ -203,7 +249,7 @@ export class CherryAgent {
                 `Correctness loop reached its maximum of ${this.options.correctnessMaxPasses} pass(es) without full verification.`,
                 review,
               ),
-            };
+            });
           }
 
           revisedAfterReview = true;
@@ -212,7 +258,7 @@ export class CherryAgent {
         } catch (error) {
           const verifierError = error instanceof Error ? error.message : String(error);
           trace.push({ step, type: "error", name: "correctness_verifier", detail: verifierError });
-          return {
+          return finish({
             answer: candidateAnswer,
             steps: step,
             trace,
@@ -221,7 +267,7 @@ export class CherryAgent {
               `Correctness verifier failed: ${verifierError}`,
               lastReview,
             ),
-          };
+          });
         }
       }
 
@@ -254,7 +300,7 @@ export class CherryAgent {
       }
     }
 
-    return {
+    return finish({
       answer: `Stopped after reaching the maximum of ${this.options.maxSteps} agent steps. The task may be incomplete; inspect the trace before retrying.`,
       steps: this.options.maxSteps,
       trace,
@@ -263,6 +309,6 @@ export class CherryAgent {
         `Agent step budget exhausted before a fully verified final answer was produced.`,
         lastReview,
       ),
-    };
+    });
   }
 }

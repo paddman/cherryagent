@@ -618,6 +618,15 @@ textarea { min-height: 76px; resize: vertical; }
 .ssh-login-result.success { color: #187452; background: #eaf9f2; }
 .ssh-login-result.error { color: #b13b4b; background: #ffedef; }
 .ssh-login-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.node-pair-command { display: grid; gap: 8px; padding: 11px; border: 1px solid #c4daf4; border-radius: 11px; background: #f4f9ff; }
+.node-pair-command[hidden] { display: none; }
+.node-pair-command textarea { font: 9px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.node-pair-list { display: grid; gap: 8px; }
+.node-pair-item { display: grid; grid-template-columns: 1fr auto; gap: 9px; align-items: center; padding: 10px; border: 1px solid #dce6f3; border-radius: 11px; background: #f9fbfe; }
+.node-pair-item strong { display: block; color: #294e7d; font-size: 10px; }
+.node-pair-item span { display: block; margin-top: 3px; color: #7c8ea6; font-size: 8px; }
+.node-pair-item.online { border-color: #a9dcc7; background: #eefaf4; }
+.node-pair-item.bound { box-shadow: inset 3px 0 #2f72c8; }
 
 .engineer-stats { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .engineer-layout { display: grid; grid-template-columns: minmax(320px, .72fr) minmax(500px, 1.28fr); gap: 14px; }
