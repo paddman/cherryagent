@@ -7,6 +7,7 @@ import { SharedEvidenceBus } from "./agentic/SharedEvidenceBus.js";
 import { ChannelGateway } from "./channels/ChannelGateway.js";
 import { LineAdapter } from "./channels/line/LineAdapter.js";
 import type { ChannelAdapterStatus } from "./channels/types.js";
+import { ChatLogStore } from "./chat/ChatLogStore.js";
 import { CognitiveEngine } from "./cognition/CognitiveEngine.js";
 import { CognitiveStore } from "./cognition/CognitiveStore.js";
 import { config } from "./config.js";
@@ -98,6 +99,7 @@ export async function createRuntime(): Promise<{
   usage: UsageStore;
   officeInbox: OfficeInboxService;
   reports: ReportStudioService;
+  chatLogs: ChatLogStore;
   channelGateway: ChannelGateway;
   connectors: RuntimeConnectors;
 }> {
@@ -105,6 +107,7 @@ export async function createRuntime(): Promise<{
 
   const approvalGate = new ApprovalGate(config.agent.autoApprove);
   const usage = new UsageStore(config.usageFile);
+  const chatLogs = new ChatLogStore(config.chatLogs.file, config.chatLogs.maxEntries);
   const tools = new ToolRegistry(approvalGate, undefined, usage);
   const memory = new MemoryStore(config.memoryFile);
   const planner = new PlannerStore(config.plannerFile);
@@ -301,6 +304,7 @@ export async function createRuntime(): Promise<{
     usage,
     officeInbox,
     reports,
+    chatLogs,
     channelGateway,
     connectors: {
       google: google.isConfigured(),

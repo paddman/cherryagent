@@ -219,7 +219,9 @@ function decorateAnswer(data, startedAt, attempt = 0) {
   const title = document.createElement('strong');
   title.textContent = 'Execution Trail · ขั้นตอนการทำงานจริง';
   const note = document.createElement('span');
-  note.textContent = 'แสดง tool calls และหลักฐานที่ตรวจสอบได้\nไม่แสดง chain-of-thought ภายใน';
+  const chatId = typeof data.chatId === 'string' ? data.chatId : '—';
+  const logId = typeof data.logId === 'string' ? data.logId : (typeof data.traceId === 'string' ? data.traceId : '—');
+  note.textContent = `chatId=${chatId}\nlogId=${logId}`;
   head.append(title, note);
 
   const list = document.createElement('div');
@@ -237,7 +239,7 @@ function decorateAnswer(data, startedAt, attempt = 0) {
   summary.className = 'execution-summary';
   const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
   const correctness = data.correctness || {};
-  summary.textContent = `${data.steps ?? trace.length} agent steps · ${trace.length} trace events · ${correctness.status || 'unverified'} · confidence ${correctness.confidence ?? '—'}/100 · ${elapsed}s`;
+  summary.textContent = `${data.steps ?? trace.length} agent steps · ${trace.length} trace events · ${correctness.status || 'unverified'} · confidence ${correctness.confidence ?? '—'}/100 · ${elapsed}s · logStored=${data.logStored === false ? 'no' : 'yes'}`;
   trail.append(head, list, summary);
   node.append(trail);
   node.closest('#chat')?.scrollTo({ top: node.closest('#chat').scrollHeight, behavior: 'smooth' });

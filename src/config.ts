@@ -181,6 +181,10 @@ export const config = {
     maxColumns: Math.max(2, integerEnv("CHERRY_REPORT_MAX_COLUMNS", 100)),
     modelTimeoutMs: Math.max(1_000, integerEnv("CHERRY_REPORT_MODEL_TIMEOUT_MS", 25_000)),
   },
+  chatLogs: {
+    file: resolve(process.env.CHERRY_CHAT_LOG_FILE ?? ".cherry/chat-logs.json"),
+    maxEntries: Math.max(100, integerEnv("CHERRY_CHAT_LOG_MAX_ENTRIES", 10_000)),
+  },
   scheduler: {
     intervalMs: Math.max(1_000, integerEnv("CHERRY_SCHEDULER_INTERVAL_MS", 15_000)),
   },

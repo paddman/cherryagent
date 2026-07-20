@@ -1,8 +1,9 @@
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
-const sessionId = localStorage.getItem('cherry-session-id') || crypto.randomUUID();
-localStorage.setItem('cherry-session-id', sessionId);
+const chatIdStorageKey = 'cherry-chat-id';
+let chatId = localStorage.getItem(chatIdStorageKey) || crypto.randomUUID();
+localStorage.setItem(chatIdStorageKey, chatId);
 const authTokenKey = 'cherry-auth-token';
 let authToken = sessionStorage.getItem(authTokenKey) || '';
 let appStarted = false;
@@ -1918,6 +1919,24 @@ function addMessage(text, role, meta = '') {
   return node;
 }
 
+function updateChatIdentity() {
+  const node = $('#chatIdentity');
+  if (node) node.textContent = `Chat ID: ${chatId}`;
+}
+
+function startNewChat() {
+  chatId = crypto.randomUUID();
+  localStorage.setItem(chatIdStorageKey, chatId);
+  const welcome = document.createElement('div');
+  welcome.className = 'message assistant';
+  welcome.textContent = 'เริ่มแชตใหม่ได้เลยค่ะ ส่งงานหรือปัญหามาได้เลย เดี๋ยวเชอรี่ลงมือผ่านเครื่องมือและเก็บ log แยกตาม Chat ID นี้นะคะ';
+  $('#chat').replaceChildren(welcome);
+  updateChatIdentity();
+}
+
+updateChatIdentity();
+$('#newChatButton').addEventListener('click', startNewChat);
+
 $('#composer').addEventListener('submit', async (event) => {
   event.preventDefault();
   const message = $('#message').value.trim();
@@ -1930,12 +1949,17 @@ $('#composer').addEventListener('submit', async (event) => {
   try {
     const data = await api('/chat', {
       method: 'POST',
-      body: JSON.stringify({ message, sessionId }),
+      body: JSON.stringify({ message, chatId }),
     });
+    if (typeof data.chatId === 'string' && data.chatId !== chatId) {
+      chatId = data.chatId;
+      localStorage.setItem(chatIdStorageKey, chatId);
+      updateChatIdentity();
+    }
     pending.textContent = data.answer;
     const meta = document.createElement('div');
     meta.className = 'meta';
-    meta.textContent = `${data.steps} agent step${data.steps === 1 ? '' : 's'}`;
+    meta.textContent = `${data.steps} agent step${data.steps === 1 ? '' : 's'} · logId=${data.logId || data.traceId || '—'}`;
     pending.append(meta);
   } catch (error) {
     pending.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
