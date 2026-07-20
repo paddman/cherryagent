@@ -73,6 +73,16 @@ function injectStyles() {
     .execution-tool-name { color:#174f96; font:800 9px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace; }
     .execution-code { max-height:360px; overflow:auto; margin:7px 0 0; padding:9px; border-radius:8px; color:#314863; background:#f1f5fa; white-space:pre-wrap; overflow-wrap:anywhere; font:9px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; }
     .execution-summary { margin-top:9px; color:#7489a4; font-size:9px; }
+    .chat-flow { display:flex; flex-wrap:wrap; align-items:stretch; gap:8px; margin:12px 0 2px; }
+    .chat-flow-node { position:relative; flex:1 1 130px; min-width:118px; padding:9px 10px; border:1px solid #d5e4f5; border-radius:11px; background:#fbfdff; }
+    .chat-flow-node::after { content:'→'; position:absolute; top:50%; right:-8px; z-index:1; color:#8eafd7; transform:translateY(-50%); font-weight:900; }
+    .chat-flow-node:last-child::after { display:none; }
+    .chat-flow-node.tool { border-color:#bfe4d3; background:#f3fcf7; }
+    .chat-flow-node.correctness { border-color:#bfd8f7; background:#f3f8ff; }
+    .chat-flow-node.error { border-color:#efc3ca; background:#fff6f7; }
+    .chat-flow-node-label { color:#8192aa; font-size:8px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
+    .chat-flow-node-title { margin-top:4px; overflow:hidden; color:#315b8d; font:800 10px/1.35 ui-monospace, SFMono-Regular, Consolas, monospace; text-overflow:ellipsis; white-space:nowrap; }
+    .chat-flow-node-meta { margin-top:5px; overflow:hidden; color:#71849e; font-size:8px; text-overflow:ellipsis; white-space:nowrap; }
   `;
   document.head.append(style);
 }
@@ -200,6 +210,47 @@ function renderEvent(event, index) {
   return details;
 }
 
+function flowNodeInfo(event, index) {
+  const detail = event?.detail && typeof event.detail === 'object' ? event.detail : {};
+  const calls = Array.isArray(detail.tool_calls) ? detail.tool_calls : [];
+  if (event.type === 'tool') {
+    return { kind: 'tool', label: `Step ${event.step ?? index + 1}`, title: event.name || 'tool', meta: 'ผลลัพธ์กลับมาแล้ว' };
+  }
+  if (event.type === 'error') {
+    return { kind: 'error', label: `Step ${event.step ?? index + 1}`, title: event.name || 'error', meta: 'ต้องตรวจ blocker' };
+  }
+  if (event.type === 'correctness') {
+    const review = event.detail && typeof event.detail === 'object' ? event.detail : {};
+    return { kind: 'correctness', label: `Step ${event.step ?? index + 1}`, title: 'correctness verifier', meta: `${review.verdict || 'ตรวจสอบ'} · ${review.confidence ?? '—'}/100` };
+  }
+  if (calls.length) {
+    return { kind: 'assistant', label: `Step ${event.step ?? index + 1}`, title: `เลือก ${calls.length} tool`, meta: calls.map((call) => call?.function?.name || 'unknown').join(', ') };
+  }
+  return { kind: 'assistant', label: `Step ${event.step ?? index + 1}`, title: 'Cherry สร้างคำตอบ', meta: 'agent decision' };
+}
+
+function renderChatFlow(trace) {
+  const flow = document.createElement('div');
+  flow.className = 'chat-flow';
+  trace.forEach((event, index) => {
+    const info = flowNodeInfo(event, index);
+    const node = document.createElement('div');
+    node.className = `chat-flow-node ${info.kind}`;
+    const label = document.createElement('div');
+    label.className = 'chat-flow-node-label';
+    label.textContent = info.label;
+    const title = document.createElement('div');
+    title.className = 'chat-flow-node-title';
+    title.textContent = info.title;
+    const meta = document.createElement('div');
+    meta.className = 'chat-flow-node-meta';
+    meta.textContent = info.meta;
+    node.append(label, title, meta);
+    flow.append(node);
+  });
+  return flow;
+}
+
 function decorateAnswer(data, startedAt, attempt = 0) {
   const node = lastAssistantMessage();
   const answer = typeof data.answer === 'string' ? data.answer : '';
@@ -227,6 +278,7 @@ function decorateAnswer(data, startedAt, attempt = 0) {
   const list = document.createElement('div');
   list.className = 'execution-step-list';
   const trace = Array.isArray(data.trace) ? data.trace : [];
+  if (trace.length) list.append(renderChatFlow(trace));
   if (trace.length) trace.forEach((event, index) => list.append(renderEvent(event, index)));
   else {
     const empty = document.createElement('div');
