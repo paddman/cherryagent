@@ -130,7 +130,7 @@ export function createPlannerTools(planner: PlannerStore): AgentTool[] {
       description: "Get the current planning dashboard with today, overdue, upcoming, flow columns, active reminders, and unread alerts.",
       risk: "safe",
       parameters: { type: "object", properties: {}, additionalProperties: false },
-      execute: async () => planner.getDashboard(),
+      execute: async (_args, context) => planner.getDashboard(new Date(), context.tenantId),
     },
     {
       name: "planner_create_item",
@@ -154,7 +154,7 @@ export function createPlannerTools(planner: PlannerStore): AgentTool[] {
         required: ["title"],
         additionalProperties: false,
       },
-      execute: async (args) => {
+      execute: async (args, context) => {
         const description = optionalString(args, "description");
         const status = parseStatus(args.status);
         const priority = parsePriority(args.priority);
@@ -166,6 +166,7 @@ export function createPlannerTools(planner: PlannerStore): AgentTool[] {
         const dependsOn = stringArray(args.dependsOn);
         return planner.createItem({
           title: requiredString(args, "title"),
+          tenantId: context.tenantId,
           ...(description ? { description } : {}),
           ...(status ? { status } : {}),
           ...(priority ? { priority } : {}),
@@ -191,10 +192,10 @@ export function createPlannerTools(planner: PlannerStore): AgentTool[] {
         },
         additionalProperties: false,
       },
-      execute: async (args) => {
+      execute: async (args, context) => {
         const status = parseStatus(args.status);
         const flowId = optionalString(args, "flowId");
-        return planner.listItems({ ...(status ? { status } : {}), ...(flowId ? { flowId } : {}) });
+        return planner.listItems({ ...(status ? { status } : {}), ...(flowId ? { flowId } : {}), tenantId: context.tenantId });
       },
     },
     {
@@ -210,10 +211,10 @@ export function createPlannerTools(planner: PlannerStore): AgentTool[] {
         required: ["id", "status"],
         additionalProperties: false,
       },
-      execute: async (args) => {
+      execute: async (args, context) => {
         const status = parseStatus(args.status);
         if (!status) throw new Error("Valid status is required");
-        return planner.setItemStatus(requiredString(args, "id"), status);
+        return planner.setItemStatus(requiredString(args, "id"), status, context.tenantId);
       },
     },
     {
@@ -229,7 +230,7 @@ export function createPlannerTools(planner: PlannerStore): AgentTool[] {
         required: ["itemId", "dependencyId"],
         additionalProperties: false,
       },
-      execute: async (args) => planner.addDependency(requiredString(args, "itemId"), requiredString(args, "dependencyId")),
+      execute: async (args, context) => planner.addDependency(requiredString(args, "itemId"), requiredString(args, "dependencyId"), context.tenantId),
     },
     {
       name: "planner_create_reminder",
@@ -241,7 +242,7 @@ export function createPlannerTools(planner: PlannerStore): AgentTool[] {
         required: ["title", "schedule"],
         additionalProperties: false,
       },
-      execute: async (args) => planner.createReminder(reminderInput(args, false)),
+      execute: async (args, context) => planner.createReminder({ ...reminderInput(args, false), tenantId: context.tenantId }),
     },
     {
       name: "planner_create_external_reminder",
@@ -253,7 +254,7 @@ export function createPlannerTools(planner: PlannerStore): AgentTool[] {
         required: ["title", "schedule", "channels"],
         additionalProperties: false,
       },
-      execute: async (args) => planner.createReminder(reminderInput(args, true)),
+      execute: async (args, context) => planner.createReminder({ ...reminderInput(args, true), tenantId: context.tenantId }),
     },
     {
       name: "planner_list_reminders",
@@ -264,7 +265,7 @@ export function createPlannerTools(planner: PlannerStore): AgentTool[] {
         properties: { enabled: { type: "boolean" } },
         additionalProperties: false,
       },
-      execute: async (args) => planner.listReminders(typeof args.enabled === "boolean" ? args.enabled : undefined),
+      execute: async (args, context) => planner.listReminders(typeof args.enabled === "boolean" ? args.enabled : undefined, context.tenantId),
     },
     {
       name: "planner_set_reminder_enabled",
@@ -276,9 +277,9 @@ export function createPlannerTools(planner: PlannerStore): AgentTool[] {
         required: ["id", "enabled"],
         additionalProperties: false,
       },
-      execute: async (args) => {
+      execute: async (args, context) => {
         if (typeof args.enabled !== "boolean") throw new Error("enabled must be boolean");
-        return planner.setReminderEnabled(requiredString(args, "id"), args.enabled);
+        return planner.setReminderEnabled(requiredString(args, "id"), args.enabled, context.tenantId);
       },
     },
     {
@@ -291,7 +292,7 @@ export function createPlannerTools(planner: PlannerStore): AgentTool[] {
         required: ["id", "minutes"],
         additionalProperties: false,
       },
-      execute: async (args) => planner.snoozeAlert(requiredString(args, "id"), Number(args.minutes)),
+      execute: async (args, context) => planner.snoozeAlert(requiredString(args, "id"), Number(args.minutes), context.tenantId),
     },
     {
       name: "planner_mark_alert_read",
@@ -303,7 +304,7 @@ export function createPlannerTools(planner: PlannerStore): AgentTool[] {
         required: ["id"],
         additionalProperties: false,
       },
-      execute: async (args) => planner.markAlertRead(requiredString(args, "id")),
+      execute: async (args, context) => planner.markAlertRead(requiredString(args, "id"), context.tenantId),
     },
   ];
 }

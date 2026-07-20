@@ -9,7 +9,7 @@
   <title>CherryAgent · AI Workforce</title>
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/styles.css?v=report-studio-1" />
 </head>
 <body>
 <div class="shell">
@@ -17,7 +17,10 @@
     <div class="brand"><div class="logo">C</div><div><h1>CherryAgent</h1><p>AI WORKFORCE</p></div></div>
     <nav class="nav">
       <button class="nav-button active" data-view="dashboard"><span>ภาพรวม</span></button>
+      <button class="nav-button" data-view="reports"><span>Report Studio</span><span class="nav-count" id="reportNavCount">0</span></button>
       <button class="nav-button" data-view="flow"><span>งานของฉัน</span><span class="nav-count" id="flowCount">0</span></button>
+      <button class="nav-button" data-view="office"><span>Office Inbox</span><span class="nav-count" id="officeInboxCount">0</span></button>
+      <button class="nav-button" data-view="deploy"><span>Advanced</span><span class="nav-count" id="deployNavCount">0</span></button>
       <button class="nav-button" data-view="reminders"><span>เตือนความจำ</span><span class="nav-count" id="alertNavCount">0</span></button>
       <button class="nav-button" data-view="engineer"><span>ช่างแก้ปัญหา</span><span class="nav-count" id="engineerNavCount">0</span></button>
       <button class="nav-button" data-view="chat"><span>คุยกับ Cherry</span></button>
@@ -38,6 +41,7 @@
       <div class="top-actions">
         <button class="ghost-button notify-button" id="notifyButton"><span class="ghost-label">Browser alerts</span> <span id="notifyState">Off</span></button>
         <button class="ghost-button" id="approvalButton"><span class="ghost-label">Approvals</span><span class="approval-count" id="approvalCount">0</span></button>
+        <button class="ghost-button" id="logoutButton">ออกจากระบบ</button>
       </div>
     </header>
 
@@ -45,12 +49,12 @@
       <div class="hero">
         <div>
           <div class="eyebrow">Your AI operating layer</div>
-          <h1>ทำงานให้เร็วขึ้น<br />ไปต่อด้วย CherryAgent</h1>
-          <p>วางแผนงาน ตั้งเตือน แก้ incident และให้ทีม Agent ลงมือทำ โดยตรวจหลักฐานก่อนสรุปผลทุกครั้ง</p>
+          <h1>Excel กลายเป็นรายงานสวย<br />พร้อมใช้ใน 3 นาที</h1>
+          <p>อัปโหลด Excel หรือ CSV แล้ว Cherry จะตรวจข้อมูล คำนวณ KPI สร้างกราฟและ PDF พร้อมหลักฐานของทุกตัวเลข</p>
           <div class="hero-actions">
-            <button class="suggestion-chip" data-prompt="ช่วยวางแผนงานสำคัญของวันนี้ให้หน่อย สรุปเป็นลำดับที่ทำได้จริง">✦ วางแผนวันนี้</button>
-            <button class="suggestion-chip" data-prompt="สรุปสถานะระบบและงานที่ต้องรีบจัดการวันนี้ พร้อมบอกเหตุผล">◎ เช็กระบบ</button>
-            <button class="suggestion-chip" data-prompt="ช่วยตรวจ incident ล่าสุดแบบ Engineer Loop และบอกหลักฐานที่ต้องเก็บ">◇ แก้ incident</button>
+            <button class="suggestion-chip report-hero-primary" id="dashboardSampleButton">✦ ลอง Sample Report</button>
+            <button class="suggestion-chip" data-switch="reports">⇧ อัปโหลดไฟล์</button>
+            <button class="suggestion-chip" data-prompt="ช่วยวางแผนงานสำคัญของวันนี้ให้หน่อย สรุปเป็นลำดับที่ทำได้จริง">◎ วางแผนวันนี้</button>
           </div>
         </div>
         <div class="date-chip" id="todayDate"></div>
@@ -80,6 +84,75 @@
       </div>
     </section>
 
+    <section class="view" id="view-reports">
+      <div class="section-head report-section-head">
+        <div><div class="eyebrow">งานแรกที่เห็นผลทันที</div><h1>Cherry Report Studio</h1><p>Excel / CSV → ตรวจข้อมูล → KPI &amp; Graph → Insight → PDF ที่ตรวจสอบย้อนกลับได้</p></div>
+        <div class="report-privacy"><strong>Private by default</strong><span>ข้อมูลดิบอยู่ใน workspace · AI เห็นเฉพาะ aggregate</span></div>
+      </div>
+
+      <div class="report-launch-grid">
+        <div class="card report-upload-card">
+          <div class="card-head"><div><h3>สร้างรายงานใหม่</h3><div class="card-sub">รองรับ .xlsx / .csv สูงสุด 20 MB · 100,000 แถว</div></div><span class="report-credit">20 credits</span></div>
+          <div class="report-dropzone" id="reportDropzone" tabindex="0" role="button" aria-label="อัปโหลด Excel หรือ CSV">
+            <input id="reportFile" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden />
+            <div class="report-drop-icon">⇧</div>
+            <strong>ลากไฟล์มาวาง หรือกดเลือกไฟล์</strong>
+            <span id="reportFileLabel">ยังไม่ได้เลือกไฟล์</span>
+          </div>
+          <div class="report-launch-controls">
+            <label>รูปแบบรายงาน
+              <select id="reportTemplate"><option value="auto">Auto detect</option><option value="sales">Sales</option><option value="finance">Finance</option><option value="operations">Operations</option><option value="general">General</option></select>
+            </label>
+            <button class="primary" id="reportUploadButton" type="button">วิเคราะห์ไฟล์</button>
+          </div>
+        </div>
+        <div class="card report-sample-card">
+          <div class="report-sample-badge">NO SETUP</div>
+          <h3>ยังไม่มีไฟล์? ลองยอดขายตัวอย่าง</h3>
+          <p>ข้อมูลยอดขาย 120 รายการ มี region, product, revenue, cost และ order status พร้อมให้ Cherry สร้างรายงานทันที</p>
+          <div class="report-sample-preview"><span>Revenue</span><i style="--h:42%"></i><i style="--h:66%"></i><i style="--h:51%"></i><i style="--h:82%"></i><i style="--h:70%"></i><i style="--h:94%"></i></div>
+          <button class="primary" id="reportSampleButton" type="button">✦ สร้าง Sample Report</button>
+        </div>
+      </div>
+
+      <div class="card report-progress-card" id="reportProgressCard" hidden>
+        <div class="report-progress-head"><div><span class="report-status" id="reportStatus">queued</span><h3 id="reportProgressTitle">กำลังเตรียมรายงาน</h3><p id="reportProgressMeta">รอเริ่ม pipeline</p></div><strong id="reportProgressPercent">0%</strong></div>
+        <div class="report-progress-bar"><span id="reportProgressBar"></span></div>
+        <div class="report-pipeline" id="reportPipeline"></div>
+      </div>
+
+      <div class="report-workspace">
+        <aside class="card report-library">
+          <div class="card-head"><div><h3>รายงานล่าสุด</h3><div class="card-sub">เก็บ 30 วันตาม tenant</div></div><button class="secondary" id="reportRefreshButton" type="button">Refresh</button></div>
+          <div class="report-list" id="reportList"></div>
+        </aside>
+        <div class="report-result" id="reportResult">
+          <div class="card report-empty" id="reportEmpty"><div class="report-empty-orb">▦</div><h3>เลือกไฟล์หรือลอง Sample Report</h3><p>เมื่อเสร็จแล้ว KPI, กราฟ, insight และปุ่มดาวน์โหลด PDF จะปรากฏตรงนี้</p></div>
+          <div id="reportDashboard" hidden>
+            <div class="card report-result-head">
+              <div><div class="report-result-badges"><span id="reportResultStatus"></span><span id="reportResultTemplate"></span><span id="reportModelMode"></span></div><h2 id="reportResultTitle"></h2><p id="reportSummary"></p><div class="report-source" id="reportSource"></div></div>
+              <div class="report-result-actions"><button class="secondary" id="reportOpenFlowButton" type="button">ดู Execution Trail</button><button class="primary" id="reportPdfButton" type="button">ดาวน์โหลด PDF</button><button class="danger-link" id="reportDeleteButton" type="button">ลบ</button></div>
+            </div>
+            <div class="report-kpis" id="reportKpis"></div>
+            <div class="report-charts" id="reportCharts"></div>
+            <div class="report-detail-grid">
+              <div class="card"><div class="card-head"><div><h3>Insight จากหลักฐาน</h3><div class="card-sub">ทุกข้ออ้างอิง KPI หรือ chart ID</div></div></div><div class="report-insights" id="reportInsights"></div></div>
+              <div class="card"><div class="card-head"><div><h3>Data Quality</h3><div class="card-sub">สิ่งที่ควรตรวจก่อนตัดสินใจ</div></div></div><div class="report-quality" id="reportQuality"></div></div>
+            </div>
+            <details class="card report-mapping-card">
+              <summary>แก้การจับคู่คอลัมน์แล้วสร้างใหม่ <span>10 credits</span></summary>
+              <form id="reportMappingForm">
+                <label>คอลัมน์วันที่<select id="reportDateColumn"></select></label>
+                <label>ตัวเลขที่ต้องวิเคราะห์<select id="reportMetrics" multiple size="5"></select></label>
+                <label>มิติที่ใช้แบ่งกลุ่ม<select id="reportDimensions" multiple size="5"></select></label>
+                <button class="primary" type="submit">Regenerate Report</button>
+              </form>
+            </details>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="view" id="view-flow">
       <div class="section-head"><div><h1>บอร์ดงาน</h1><p>ลากงานข้ามสถานะได้เลย รายละเอียด ความสำคัญ และกำหนดส่งจะติดไปด้วย</p></div></div>
       <form class="quick-add" id="flowAddForm">
@@ -89,6 +162,112 @@
         <button class="primary" type="submit">Add</button>
       </form>
       <div class="board" id="flowBoard"></div>
+    </section>
+
+    <section class="view" id="view-office">
+      <div class="section-head office-section-head">
+        <div><h1>Office Inbox</h1><p>อีเมล → คัดแยก → งานที่ติดตามได้ พร้อมหลักฐานใน workspace เดียว</p></div>
+        <span class="office-tenant-badge" id="officeTenantBadge">Tenant: checking...</span>
+      </div>
+      <div class="office-layout">
+        <div style="display:grid;gap:14px;align-content:start">
+          <div class="card office-sync-card">
+            <div class="card-head"><div><h3>ดึงอีเมลเข้ากล่องงาน</h3><div class="card-sub">เริ่มจาก Gmail Inbox แล้วให้ Office Assistant เปลี่ยนเรื่องสำคัญเป็น task</div></div></div>
+            <form class="office-sync-form" id="officeSyncForm">
+              <label>Gmail query<input id="officeInboxQuery" value="in:inbox" placeholder="in:inbox newer_than:7d" /></label>
+              <label>จำนวนสูงสุด<input id="officeInboxMax" type="number" min="1" max="100" value="25" /></label>
+              <button class="primary" id="officeSyncButton" type="submit">Sync Inbox</button>
+            </form>
+            <div class="office-source-note" id="officeSourceNote">Google Workspace connector จะถูกเรียกใช้ตาม tenant นี้</div>
+          </div>
+          <div class="card">
+            <div class="card-head"><div><h3>Inbox ที่ต้องจัดการ</h3><div class="card-sub">Triage เป็นงาน หรือ ignore ได้โดยไม่ลบอีเมลต้นฉบับ</div></div><button class="secondary" id="officeRefreshButton" type="button">Refresh</button></div>
+            <div class="office-inbox-list" id="officeInboxList"></div>
+          </div>
+        </div>
+        <aside class="card office-usage-card">
+          <div class="card-head"><div><h3>Usage credits</h3><div class="card-sub">รวม model, tool call และ compute ต่อองค์กร</div></div><span class="usage-status" id="officeUsageStatus">--</span></div>
+          <div class="usage-value" id="officeUsageValue">-- / --</div>
+          <div class="usage-bar"><span id="officeUsageBar"></span></div>
+          <div class="usage-meta" id="officeUsageMeta">กำลังโหลด budget...</div>
+          <div class="usage-breakdown" id="officeUsageBreakdown"></div>
+          <div class="office-product-note"><strong>Inbox-to-Execution</strong><span>ผลลัพธ์หลักของ Cherry คือ งานที่ปิดได้จริง พร้อม owner, deadline และ evidence</span></div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="view" id="view-deploy">
+      <div class="section-head deploy-section-head">
+        <div><h1>Deploy Flow</h1><p>ให้ Cherry แตกงานเป็น dependency graph แล้วให้ specialist agents ลงมือทำตามลำดับ</p></div>
+        <div class="deploy-live-badge"><span class="dot" id="deployLiveDot"></span><span id="deployLiveText">พร้อมรัน Workflow</span></div>
+      </div>
+      <div class="deploy-layout">
+        <div class="deploy-main">
+          <div class="card deploy-launch-card">
+            <div class="card-head"><div><h3>Deploy งานใหม่</h3><div class="card-sub">กรอกเป้าหมายเดียว แล้ว Cherry จะสร้าง topology ให้อัตโนมัติ</div></div></div>
+            <form class="deploy-form" id="deployForm">
+              <textarea id="deployGoal" required placeholder="เช่น ตรวจปัญหาเว็บ CherryAgent แล้วสรุปสาเหตุ พร้อมหลักฐานที่ตรวจสอบได้"></textarea>
+              <div class="deploy-form-row">
+                <label class="deploy-role-select">Preferred Agent
+                  <select id="deployRole">
+                    <option value="">Auto select by goal</option>
+                    <option value="planner">Planner</option>
+                    <option value="engineer">Engineer</option>
+                    <option value="research">Research</option>
+                    <option value="market">Market</option>
+                    <option value="office">Office</option>
+                    <option value="infra">Infra</option>
+                    <option value="database">Database</option>
+                    <option value="general">General</option>
+                  </select>
+                </label>
+                <label class="deploy-tag-input">Tags
+                  <input id="deployTags" placeholder="เช่น excel, report, urgent" />
+                </label>
+                <button class="primary deploy-submit" id="deploySubmit" type="submit">Deploy &amp; Run</button>
+              </div>
+            </form>
+          </div>
+          <div class="flow-toolbar card">
+            <label class="flow-run-picker">Run ล่าสุด
+              <select id="deployRunSelect"><option value="">ยังไม่มี run</option></select>
+            </label>
+            <div class="flow-run-identity" id="deployRunIdentity">jobId / runId / traceId จะแสดงเมื่อเลือก run</div>
+            <div class="flow-toolbar-actions"><button class="secondary" id="flowFitButton" type="button">Fit graph</button><button class="secondary" id="flowRefreshButton" type="button">Refresh</button></div>
+          </div>
+          <div class="card topology-card">
+            <div class="topology-header"><div><h3>Agent Topology</h3><div class="card-sub" id="topologySubtitle">Deploy แล้วจะเห็นเส้นทางงานและ node ที่กำลัง active</div></div><div class="topology-legend"><span><i class="legend-dot pending"></i>รอ</span><span><i class="legend-dot running"></i>รัน</span><span><i class="legend-dot succeeded"></i>เสร็จ</span><span><i class="legend-dot blocked"></i>ติดขัด</span></div></div>
+            <div class="flow-viewport" id="flowViewport">
+              <div class="flow-stage" id="flowStage">
+                <svg class="flow-svg" id="flowSvg" width="1800" height="900" viewBox="0 0 1800 900" aria-label="Agent workflow topology"><defs><marker id="flowArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#9db6d9"></path></marker></defs><g id="flowEdges"></g></svg>
+                <div class="flow-nodes" id="flowNodes"></div>
+              </div>
+              <div class="flow-empty" id="flowEmpty"><div class="flow-empty-orb">✦</div><strong>ยังไม่มี Workflow</strong><span>ใส่เป้าหมายด้านบน แล้วกด Deploy &amp; Run เพื่อเริ่ม topology แรก</span></div>
+            </div>
+          </div>
+        </div>
+        <aside class="card flow-inspector" id="flowInspector">
+          <div class="card-head"><div><h3>Node Detail</h3><div class="card-sub">คลิก node เพื่อดูสถานะและหลักฐาน</div></div><span class="inspector-status" id="inspectorStatus">รอเลือก node</span></div>
+          <div class="inspector-empty" id="inspectorEmpty">เลือก node บน topology เพื่อดู objective, dependency, progress และ evidence</div>
+          <div id="inspectorBody" hidden>
+            <div class="inspector-title" id="inspectorTitle"></div>
+            <div class="inspector-meta" id="inspectorMeta"></div>
+            <div class="inspector-section"><span>Identifiers</span><p id="inspectorIdentifiers"></p></div>
+            <div class="inspector-section"><span>Tags</span><p id="inspectorTags"></p></div>
+            <div class="inspector-section"><span>Objective</span><p id="inspectorObjective"></p></div>
+            <div class="inspector-section"><span>Progress</span><p id="inspectorProgress"></p></div>
+            <div class="inspector-section"><span>Dependencies</span><p id="inspectorDependencies"></p></div>
+            <div class="inspector-section"><span>Latest activity</span><p id="inspectorActivity"></p></div>
+            <div class="inspector-section"><span>Result / Error</span><pre id="inspectorResult"></pre></div>
+            <div class="inspector-section"><span>Evidence</span><div class="inspector-evidence" id="inspectorEvidence"></div></div>
+            <div class="inspector-section"><span>Task logs</span><div class="inspector-evidence" id="inspectorLogs"></div></div>
+          </div>
+        </aside>
+      </div>
+      <div class="deploy-bottom-grid">
+        <div class="card"><div class="card-head"><div><h3>Active execution</h3><div class="card-sub">งานที่กำลังวิ่งและขั้นตอนล่าสุด</div></div></div><div class="active-task-list" id="activeTaskList"></div></div>
+        <div class="card"><div class="card-head"><div><h3>Run log timeline</h3><div class="card-sub">ทุก event มี sequence, logId, taskId และ tag สำหรับไล่เหตุการณ์</div></div></div><div class="flow-activity-list" id="flowActivityList"></div></div>
+      </div>
     </section>
 
     <section class="view" id="view-reminders">
@@ -159,6 +338,19 @@
   </main>
 </div>
 <div class="toast-stack" id="toastStack"></div>
-<script type="module" src="/app.js"></script>
+<div class="auth-overlay" id="authOverlay" hidden>
+  <section class="auth-card" aria-labelledby="authTitle">
+    <div class="eyebrow">CHERRY WORKSPACE</div>
+    <h2 id="authTitle">เข้าสู่ระบบก่อนเริ่มงาน</h2>
+    <p>ใช้บัญชี admin ที่ตั้งไว้ใน <code>CHERRY_AUTH_ADMIN_EMAIL</code> และ <code>CHERRY_AUTH_ADMIN_PASSWORD</code></p>
+    <form id="authForm">
+      <label>อีเมล<input id="authEmail" type="email" autocomplete="username" placeholder="padd@cherrydeskx.com" required /></label>
+      <label>รหัสผ่าน<input id="authPassword" type="password" autocomplete="current-password" required /></label>
+      <p class="auth-error" id="authError"></p>
+      <button class="primary" type="submit" id="authSubmit">เข้าสู่ workspace</button>
+    </form>
+  </section>
+</div>
+<script type="module" src="/app.js?v=report-studio-1"></script>
 </body>
 </html>

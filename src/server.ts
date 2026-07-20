@@ -1,16 +1,23 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
+import Busboy from "busboy";
 import { createRuntime } from "./bootstrap.js";
+import { AuthService, type AuthIdentity } from "./auth/AuthService.js";
 import { config } from "./config.js";
+import type { AgentRole } from "./agentic/AgenticStateStore.js";
+import type { TenantPlan } from "./tenancy/constants.js";
 import { getAuditLogger, AuditLogger } from "./audit/AuditLogger.js";
 import type { EngineerLoopStatus, EngineerPhase } from "./engineer/EngineerLoopEngine.js";
 import type { PlanPriority, PlanStatus } from "./planner/PlannerStore.js";
 import type { NotificationChannel, ScheduleSpec } from "./planner/schedule.js";
 import type { PendingApproval } from "./safety/ApprovalGate.js";
+import type { ReportMapping, ReportTemplate } from "./reports/types.js";
 
 const publicRoot = resolve(process.cwd(), "public");
-const { agent, tools, approvalGate, connectors, planner, engineer, scheduler, channelGateway } = await createRuntime();
+const { agent, tools, approvalGate, usage, officeInbox, reports, connectors, planner, engineer, scheduler, channelGateway, orchestrator, agenticStore } = await createRuntime();
+const auth = new AuthService(config.auth);
+if (config.auth.enabled) await auth.initialize();
 
 // ============================================================================
 // Audit logger singleton — ping ที่ boot เพื่อเช็คว่า PG พร้อม
@@ -24,10 +31,28 @@ const priorities: PlanPriority[] = ["low", "normal", "high", "urgent"];
 const notificationChannels: NotificationChannel[] = ["in_app", "browser", "email", "line", "slack", "webhook"];
 const engineerStatuses: EngineerLoopStatus[] = ["running", "blocked", "succeeded", "failed", "aborted"];
 const engineerPhases: EngineerPhase[] = ["plan", "execute", "observe", "diagnose", "patch", "test", "verify", "learn"];
+const orchestrationRoles: AgentRole[] = ["office", "planner", "infra", "market", "research", "database", "engineer", "general"];
+const reportTemplates: ReportTemplate[] = ["auto", "general", "sales", "finance", "operations"];
+
+async function orchestrationSnapshot(runId: string): Promise<{
+  run: Awaited<ReturnType<typeof orchestrator.getRun>>;
+  handoffs: Awaited<ReturnType<typeof agenticStore.listHandoffs>>;
+  evidence: Awaited<ReturnType<typeof agenticStore.listEvidence>>;
+  logs: Awaited<ReturnType<typeof agenticStore.listLogs>>;
+}> {
+  const [run, handoffs, evidence, logs] = await Promise.all([
+    orchestrator.getRun(runId),
+    agenticStore.listHandoffs({ runId, limit: 500 }),
+    agenticStore.listEvidence({ runId, limit: 500 }),
+    agenticStore.listLogs({ runId, limit: 1000 }),
+  ]);
+  return { run, handoffs, evidence, logs };
+}
 
 const contentTypes: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".webmanifest": "application/manifest+json; charset=utf-8",
   ".svg": "image/svg+xml",
@@ -42,6 +67,13 @@ function json(res: ServerResponse, status: number, payload: unknown): void {
     "access-control-allow-origin": "*",
   });
   res.end(JSON.stringify(payload));
+}
+
+function bearerToken(req: IncomingMessage): string | undefined {
+  const header = req.headers.authorization;
+  if (typeof header !== "string") return undefined;
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || undefined;
 }
 
 async function readRawBody(req: IncomingMessage): Promise<string> {
@@ -64,6 +96,107 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
     throw new Error("JSON body must be an object");
   }
   return parsed as Record<string, unknown>;
+}
+
+async function readReportUpload(req: IncomingMessage): Promise<{
+  buffer: Buffer;
+  fileName: string;
+  mimeType: string;
+  template?: ReportTemplate;
+  title?: string;
+}> {
+  const contentType = req.headers["content-type"];
+  if (typeof contentType !== "string" || !contentType.toLowerCase().startsWith("multipart/form-data")) {
+    throw new Error("Report upload must use multipart/form-data");
+  }
+
+  return await new Promise((resolveUpload, rejectUpload) => {
+    let settled = false;
+    let fileName = "";
+    let mimeType = "";
+    let fileSeen = false;
+    let fileTooLarge = false;
+    let template: ReportTemplate | undefined;
+    let title: string | undefined;
+    const chunks: Buffer[] = [];
+
+    const fail = (error: unknown): void => {
+      if (settled) return;
+      settled = true;
+      rejectUpload(error instanceof Error ? error : new Error(String(error)));
+    };
+
+    let parser: ReturnType<typeof Busboy>;
+    try {
+      parser = Busboy({
+        headers: req.headers,
+        limits: { files: 1, fileSize: config.reports.maxBytes, fields: 5, fieldSize: 10_000, parts: 6 },
+      });
+    } catch (error) {
+      fail(error);
+      return;
+    }
+
+    parser.on("file", (fieldName, stream, info) => {
+      if (fieldName !== "file" || fileSeen) {
+        stream.resume();
+        return;
+      }
+      fileSeen = true;
+      fileName = info.filename;
+      mimeType = info.mimeType;
+      stream.on("data", (chunk: Buffer | string) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+      stream.on("limit", () => { fileTooLarge = true; });
+      stream.on("error", fail);
+    });
+    parser.on("field", (name, value) => {
+      if (name === "template" && value.trim()) {
+        if (!reportTemplates.includes(value.trim() as ReportTemplate)) {
+          fail(new Error(`template must be one of: ${reportTemplates.join(", ")}`));
+          return;
+        }
+        template = value.trim() as ReportTemplate;
+      }
+      if (name === "title" && value.trim()) title = value.trim().slice(0, 160);
+    });
+    parser.on("filesLimit", () => fail(new Error("Only one report file can be uploaded")));
+    parser.on("partsLimit", () => fail(new Error("Report upload contains too many parts")));
+    parser.on("error", fail);
+    parser.on("finish", () => {
+      if (settled) return;
+      if (fileTooLarge) return fail(new Error(`File exceeds ${Math.round(config.reports.maxBytes / 1_000_000)} MB limit`));
+      if (!fileSeen || !fileName || !chunks.length) return fail(new Error("file is required"));
+      settled = true;
+      resolveUpload({
+        buffer: Buffer.concat(chunks),
+        fileName,
+        mimeType,
+        ...(template ? { template } : {}),
+        ...(title ? { title } : {}),
+      });
+    });
+    req.on("aborted", () => fail(new Error("Report upload was aborted")));
+    req.pipe(parser);
+  });
+}
+
+function parseReportTemplate(value: unknown): ReportTemplate | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !reportTemplates.includes(value as ReportTemplate)) {
+    throw new Error(`template must be one of: ${reportTemplates.join(", ")}`);
+  }
+  return value as ReportTemplate;
+}
+
+function parseReportMapping(value: unknown): ReportMapping {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("mapping must be an object");
+  const input = value as Record<string, unknown>;
+  const metrics = stringArray(input.metrics);
+  const dimensions = stringArray(input.dimensions);
+  if (!metrics) throw new Error("mapping.metrics must be an array");
+  if (!dimensions) throw new Error("mapping.dimensions must be an array");
+  const dateColumn = optionalString(input, "dateColumn");
+  return { ...(dateColumn ? { dateColumn } : {}), metrics, dimensions };
 }
 
 function requestHeaders(req: IncomingMessage): Record<string, string> {
@@ -139,6 +272,17 @@ function parseChannels(value: unknown): NotificationChannel[] | undefined {
   });
 }
 
+function parseOrchestrationRoles(value: unknown): AgentRole[] | undefined {
+  const roles = stringArray(value);
+  if (roles === undefined) return undefined;
+  for (const role of roles) {
+    if (!orchestrationRoles.includes(role as AgentRole)) {
+      throw new Error(`Unknown orchestration role: ${role}`);
+    }
+  }
+  return roles as AgentRole[];
+}
+
 function parseSchedule(value: unknown): ScheduleSpec {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("schedule must be an object");
   const input = value as Record<string, unknown>;
@@ -181,9 +325,10 @@ async function serveStatic(req: IncomingMessage, res: ServerResponse): Promise<b
     const info = await stat(target);
     if (!info.isFile()) return false;
     const body = await readFile(target);
+    const isDocument = target.endsWith(".html");
     res.writeHead(200, {
       "content-type": contentTypes[extname(target)] ?? "application/octet-stream",
-      "cache-control": target.endsWith("sw.js") ? "no-cache" : "public, max-age=300",
+      "cache-control": target.endsWith("sw.js") || isDocument ? "no-cache" : "public, max-age=300",
     });
     res.end(body);
     return true;
@@ -214,6 +359,7 @@ const server = createServer(async (req, res) => {
   const fwdForStr = typeof fwdFor === "string" ? (fwdFor.split(",")[0] ?? "").trim() : undefined;
   const cfIpStr = typeof cfIp === "string" ? cfIp : undefined;
   const clientIp: string | undefined = fwdForStr || cfIpStr || req.socket.remoteAddress || undefined;
+  let requestIdentity: AuthIdentity | undefined;
   // attach traceId เพื่อให้ tool_call audit สามารถ correlate กับ http_request ได้
   (req as IncomingMessage & { traceId?: string }).traceId = traceId;
 
@@ -249,6 +395,10 @@ const server = createServer(async (req, res) => {
       metadata: isStaticAsset ? { static: true } : {},
     };
     if (clientIp) event.ip = clientIp;
+    if (requestIdentity) {
+      event.userId = requestIdentity.user.id;
+      event.sessionId = requestIdentity.sessionId;
+    }
 
     audit.log(event);
   });
@@ -260,17 +410,187 @@ const server = createServer(async (req, res) => {
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
         "access-control-allow-origin": "*",
-        "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
-        "access-control-allow-headers": "content-type,x-line-signature",
+        "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
+        "access-control-allow-headers": "content-type,authorization,x-line-signature",
       });
       res.end();
       return;
     }
 
+    if (req.method === "POST" && pathname === "/auth/login") {
+      if (!config.auth.enabled) {
+        json(res, 400, { ok: false, error: "Authentication is disabled" });
+        return;
+      }
+
+      try {
+        const body = await readJson(req);
+        const result = await auth.login(requiredString(body, "email"), requiredString(body, "password"));
+        requestIdentity = result;
+        const event: import("./audit/AuditLogger.js").AuditEvent = {
+          action: "login",
+          userId: result.user.id,
+          sessionId: result.sessionId,
+          resultStatus: "ok",
+        };
+        if (clientIp) event.ip = clientIp;
+        audit.log(event);
+        json(res, 200, {
+          ok: true,
+          token: result.token,
+          user: result.user,
+          expiresAt: result.expiresAt,
+        });
+      } catch (error) {
+        const event: import("./audit/AuditLogger.js").AuditEvent = { action: "login_failed", resultStatus: "error" };
+        if (clientIp) event.ip = clientIp;
+        audit.log(event);
+        json(res, 401, { ok: false, error: "Invalid email or password" });
+      }
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/auth/logout") {
+      if (config.auth.enabled) {
+        requestIdentity = auth.authenticate(bearerToken(req));
+        if (!requestIdentity) {
+          json(res, 401, { ok: false, error: "Authentication required" });
+          return;
+        }
+        await auth.logout(bearerToken(req));
+        const event: import("./audit/AuditLogger.js").AuditEvent = {
+          action: "logout",
+          userId: requestIdentity.user.id,
+          sessionId: requestIdentity.sessionId,
+          resultStatus: "ok",
+        };
+        if (clientIp) event.ip = clientIp;
+        audit.log(event);
+      }
+      json(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/auth/me") {
+      if (!config.auth.enabled) {
+        json(res, 200, { ok: true, authEnabled: false, user: null });
+        return;
+      }
+      requestIdentity = auth.authenticate(bearerToken(req));
+      if (!requestIdentity) {
+        json(res, 401, { ok: false, error: "Authentication required" });
+        return;
+      }
+      json(res, 200, { ok: true, authEnabled: true, user: requestIdentity.user, expiresAt: requestIdentity.expiresAt });
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/workspace/context") {
+      if (!requestIdentity && config.auth.enabled) {
+        requestIdentity = auth.authenticate(bearerToken(req));
+      }
+      if (config.auth.enabled && !requestIdentity) {
+        json(res, 401, { ok: false, error: "Authentication required" });
+        return;
+      }
+      const tenantId = requestIdentity?.user.tenantId ?? "org-default";
+      const organization = auth.getOrganization(tenantId);
+      json(res, 200, {
+        ok: true,
+        organization: organization ?? { id: tenantId, name: "Cherry Workspace", slug: "cherry-workspace", plan: "shared", enabled: true },
+        user: requestIdentity?.user ?? null,
+      });
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/organizations") {
+      if (!requestIdentity && config.auth.enabled) requestIdentity = auth.authenticate(bearerToken(req));
+      if (!requestIdentity || requestIdentity.user.role !== "admin") {
+        json(res, 403, { ok: false, error: "Organization administration requires admin role" });
+        return;
+      }
+      json(res, 200, { ok: true, organizations: auth.listOrganizations() });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/organizations") {
+      if (!requestIdentity && config.auth.enabled) requestIdentity = auth.authenticate(bearerToken(req));
+      if (!requestIdentity || requestIdentity.user.role !== "admin") {
+        json(res, 403, { ok: false, error: "Organization administration requires admin role" });
+        return;
+      }
+      const body = await readJson(req);
+      const rawPlan = optionalString(body, "plan");
+      const slug = optionalString(body, "slug");
+      const plans: TenantPlan[] = ["pilot", "shared", "enterprise", "dedicated"];
+      if (rawPlan && !plans.includes(rawPlan as TenantPlan)) throw new Error(`plan must be one of: ${plans.join(", ")}`);
+      const organization = await auth.createOrganization({
+        name: requiredString(body, "name"),
+        ...(slug ? { slug } : {}),
+        ...(rawPlan ? { plan: rawPlan as TenantPlan } : {}),
+      });
+      json(res, 201, { ok: true, organization });
+      return;
+    }
+
+    const organizationMemberMatch = pathname.match(/^\/organizations\/([^/]+)\/members$/);
+    if (req.method === "POST" && organizationMemberMatch) {
+      if (!requestIdentity && config.auth.enabled) requestIdentity = auth.authenticate(bearerToken(req));
+      if (!requestIdentity || requestIdentity.user.role !== "admin") {
+        json(res, 403, { ok: false, error: "Organization administration requires admin role" });
+        return;
+      }
+      const body = await readJson(req);
+      const role = optionalString(body, "role") as AuthIdentity["user"]["role"] | undefined;
+      if (role && !["admin", "user", "viewer"].includes(role)) throw new Error("role must be admin, user, or viewer");
+      const member = await auth.createMember({
+        tenantId: decodeURIComponent(organizationMemberMatch[1] ?? ""),
+        email: requiredString(body, "email"),
+        name: requiredString(body, "name"),
+        password: requiredString(body, "password"),
+        ...(role ? { role } : {}),
+      });
+      json(res, 201, { ok: true, member });
+      return;
+    }
+
+    // Login assets remain public. Every application API below this point requires a valid session.
+    if (await serveStatic(req, res)) return;
+
+    const channelWebhookMatch = pathname.match(/^\/channels\/([^/]+)\/webhook$/);
+    const isPublicApi = (req.method === "GET" && pathname === "/health")
+      || (req.method === "POST" && Boolean(channelWebhookMatch));
+
+    if (config.auth.enabled && !isPublicApi) {
+      requestIdentity = auth.authenticate(bearerToken(req));
+      if (!requestIdentity) {
+        json(res, 401, { ok: false, error: "Authentication required" });
+        return;
+      }
+
+      if (requestIdentity.user.role === "viewer" && req.method !== "GET") {
+        const event: import("./audit/AuditLogger.js").AuditEvent = {
+          action: "rbac_deny",
+          userId: requestIdentity.user.id,
+          sessionId: requestIdentity.sessionId,
+          path: pathname,
+          method: req.method ?? "UNKNOWN",
+          resultStatus: "denied",
+          metadata: { role: requestIdentity.user.role },
+        };
+        if (clientIp) event.ip = clientIp;
+        audit.log(event);
+        json(res, 403, { ok: false, error: "Your role is read-only" });
+        return;
+      }
+    }
+
+    const tenantId = requestIdentity?.user.tenantId ?? "org-default";
+
     if (req.method === "GET" && pathname === "/health") {
       const [dashboard, engineerDashboard] = await Promise.all([
-        planner.getDashboard(),
-        engineer.getDashboard(),
+        planner.getDashboard(new Date(), tenantId),
+        engineer.getDashboard(tenantId),
       ]);
       json(res, 200, {
         ok: true,
@@ -278,7 +598,8 @@ const server = createServer(async (req, res) => {
         model: config.llm.model,
         tools: tools.list().length,
         connectors,
-        pendingApprovals: approvalGate.list("pending").length,
+        auth: { enabled: config.auth.enabled },
+        pendingApprovals: approvalGate.list("pending").filter((item) => item.context.tenantId === tenantId).length,
         planner: {
           schedulerRunning: scheduler.running,
           schedulerIntervalMs: config.scheduler.intervalMs,
@@ -296,7 +617,229 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    const channelWebhookMatch = pathname.match(/^\/channels\/([^/]+)\/webhook$/);
+    if (req.method === "GET" && pathname === "/usage/dashboard") {
+      json(res, 200, { ok: true, usage: await usage.dashboard(tenantId) });
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/usage/events") {
+      const limit = Number(url.searchParams.get("limit") ?? "100");
+      json(res, 200, { ok: true, events: await usage.listEvents(tenantId, Number.isFinite(limit) ? limit : 100) });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/reports") {
+      const upload = await readReportUpload(req);
+      reports.validateUpload(upload.fileName, upload.mimeType, upload.buffer);
+      const quota = await usage.tryConsume({
+        tenantId,
+        userId: requestIdentity?.user.id ?? "web-user",
+        kind: "report_run",
+        units: 20,
+        metadata: { feature: "report_upload", fileName: upload.fileName },
+      });
+      if (!quota.allowed) {
+        json(res, 429, { ok: false, error: quota.reason, usage: quota });
+        return;
+      }
+      const record = await reports.create({ tenantId, ...upload });
+      json(res, 202, { ok: true, reportId: record.id, runId: record.runId, report: await reports.get(record.id, tenantId) });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/reports/sample") {
+      const body = await readJson(req);
+      parseReportTemplate(body.template);
+      const quota = await usage.tryConsume({
+        tenantId,
+        userId: requestIdentity?.user.id ?? "web-user",
+        kind: "report_run",
+        units: 20,
+        metadata: { feature: "report_sample" },
+      });
+      if (!quota.allowed) {
+        json(res, 429, { ok: false, error: quota.reason, usage: quota });
+        return;
+      }
+      const record = await reports.createSample(tenantId);
+      json(res, 202, { ok: true, reportId: record.id, runId: record.runId, report: await reports.get(record.id, tenantId) });
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/reports") {
+      const limit = Number(url.searchParams.get("limit") ?? "50");
+      json(res, 200, { ok: true, reports: await reports.list(tenantId, Number.isFinite(limit) ? limit : 50) });
+      return;
+    }
+
+    const reportEventsMatch = pathname.match(/^\/reports\/([^/]+)\/events$/);
+    if (req.method === "GET" && reportEventsMatch) {
+      const reportId = decodeURIComponent(reportEventsMatch[1] ?? "");
+      const report = await reports.get(reportId, tenantId);
+      const currentRun = await agenticStore.getRun(report.runId, tenantId);
+      res.writeHead(200, {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache, no-store",
+        connection: "keep-alive",
+        "x-accel-buffering": "no",
+      });
+
+      let closed = false;
+      const send = (event: string, payload: unknown): void => {
+        if (closed || res.writableEnded) return;
+        res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
+      };
+      send("snapshot", { report, ...(await orchestrationSnapshot(report.runId)) });
+      if (currentRun.status !== "running") {
+        send("complete", { report });
+        res.end();
+        return;
+      }
+      const unsubscribe = agenticStore.subscribe(report.runId, (event) => {
+        send("update", event);
+        const payload = event.payload as { status?: string } | undefined;
+        if (event.type === "run.updated" && payload?.status && payload.status !== "running") {
+          setTimeout(async () => {
+            if (closed) return;
+            try { send("complete", { report: await reports.get(reportId, tenantId) }); } catch { /* connection may have closed */ }
+            cleanup();
+            res.end();
+          }, 50);
+        }
+      });
+      const heartbeat = setInterval(() => send("heartbeat", { at: new Date().toISOString() }), 15_000);
+      const cleanup = (): void => {
+        if (closed) return;
+        closed = true;
+        clearInterval(heartbeat);
+        unsubscribe();
+      };
+      req.on("close", cleanup);
+      res.on("close", cleanup);
+      return;
+    }
+
+    const reportPdfMatch = pathname.match(/^\/reports\/([^/]+)\/pdf$/);
+    if (req.method === "GET" && reportPdfMatch) {
+      const reportId = decodeURIComponent(reportPdfMatch[1] ?? "");
+      const pdf = await reports.pdfPath(reportId, tenantId);
+      const body = await readFile(pdf.path);
+      const encodedName = encodeURIComponent(pdf.fileName);
+      res.writeHead(200, {
+        "content-type": "application/pdf",
+        "content-length": body.length,
+        "content-disposition": `attachment; filename="cherry-report.pdf"; filename*=UTF-8''${encodedName}`,
+        "cache-control": "private, no-store",
+      });
+      res.end(body);
+      return;
+    }
+
+    const reportMappingMatch = pathname.match(/^\/reports\/([^/]+)\/mapping$/);
+    if (req.method === "PATCH" && reportMappingMatch) {
+      const reportId = decodeURIComponent(reportMappingMatch[1] ?? "");
+      await reports.get(reportId, tenantId);
+      const body = await readJson(req);
+      const mapping = parseReportMapping(body.mapping ?? body);
+      const quota = await usage.tryConsume({
+        tenantId,
+        userId: requestIdentity?.user.id ?? "web-user",
+        kind: "report_run",
+        units: 10,
+        metadata: { feature: "report_regenerate", reportId },
+      });
+      if (!quota.allowed) {
+        json(res, 429, { ok: false, error: quota.reason, usage: quota });
+        return;
+      }
+      const record = await reports.regenerate(reportId, tenantId, mapping);
+      json(res, 202, { ok: true, reportId: record.id, runId: record.runId, report: await reports.get(record.id, tenantId) });
+      return;
+    }
+
+    const reportMatch = pathname.match(/^\/reports\/([^/]+)$/);
+    if (req.method === "GET" && reportMatch) {
+      json(res, 200, { ok: true, report: await reports.get(decodeURIComponent(reportMatch[1] ?? ""), tenantId) });
+      return;
+    }
+    if (req.method === "DELETE" && reportMatch) {
+      await reports.remove(decodeURIComponent(reportMatch[1] ?? ""), tenantId);
+      res.writeHead(204, { "cache-control": "no-store", "access-control-allow-origin": "*" });
+      res.end();
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/usage/budget") {
+      if (requestIdentity?.user.role !== "admin") {
+        json(res, 403, { ok: false, error: "Usage budget administration requires admin role" });
+        return;
+      }
+      const body = await readJson(req);
+      const monthlyCredits = Number(body.monthlyCredits);
+      if (!Number.isFinite(monthlyCredits) || monthlyCredits < 1) throw new Error("monthlyCredits must be a positive number");
+      json(res, 200, { ok: true, budget: await usage.setBudget(tenantId, monthlyCredits) });
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/office/inbox") {
+      const rawStatus = url.searchParams.get("status")?.trim();
+      const statuses = ["new", "triaged", "ignored"] as const;
+      if (rawStatus && !statuses.includes(rawStatus as typeof statuses[number])) throw new Error(`status must be one of: ${statuses.join(", ")}`);
+      json(res, 200, { ok: true, items: await officeInbox.list(tenantId, rawStatus as typeof statuses[number] | undefined) });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/office/inbox/sync") {
+      const quota = await usage.tryConsume({ tenantId, userId: requestIdentity?.user.id ?? "web-user", kind: "office_inbox", units: 5, metadata: { feature: "gmail_sync" } });
+      if (!quota.allowed) {
+        json(res, 429, { ok: false, error: quota.reason, usage: quota });
+        return;
+      }
+      const body = await readJson(req);
+      const query = optionalString(body, "query");
+      const result = await officeInbox.sync({
+        tenantId,
+        ...(query ? { query } : {}),
+        ...(typeof body.maxResults === "number" ? { maxResults: body.maxResults } : {}),
+      });
+      json(res, 200, { ok: true, ...result });
+      return;
+    }
+
+    const officeInboxActionMatch = pathname.match(/^\/office\/inbox\/([^/]+)\/(triage|ignore)$/);
+    if (req.method === "POST" && officeInboxActionMatch) {
+      const inboxId = decodeURIComponent(officeInboxActionMatch[1] ?? "");
+      const action = officeInboxActionMatch[2];
+      if (action === "ignore") {
+        json(res, 200, { ok: true, item: await officeInbox.ignore(inboxId, tenantId) });
+        return;
+      }
+      const body = await readJson(req);
+      const title = optionalString(body, "title");
+      const description = optionalString(body, "description");
+      const dueAt = optionalString(body, "dueAt");
+      const tags = stringArray(body.tags);
+      const quota = await usage.tryConsume({ tenantId, userId: requestIdentity?.user.id ?? "web-user", kind: "office_inbox", units: 2, metadata: { feature: "inbox_triage" } });
+      if (!quota.allowed) {
+        json(res, 429, { ok: false, error: quota.reason, usage: quota });
+        return;
+      }
+      const priority = optionalString(body, "priority");
+      const priorities = ["low", "normal", "high", "urgent"] as const;
+      if (priority && !priorities.includes(priority as typeof priorities[number])) throw new Error(`priority must be one of: ${priorities.join(", ")}`);
+      const result = await officeInbox.triage({
+        tenantId,
+        inboxId,
+        ...(title ? { title } : {}),
+        ...(description ? { description } : {}),
+        ...(dueAt ? { dueAt } : {}),
+        ...(priority ? { priority: priority as typeof priorities[number] } : {}),
+        ...(tags ? { tags } : {}),
+      });
+      json(res, 201, { ok: true, ...result });
+      return;
+    }
+
     if (req.method === "POST" && channelWebhookMatch) {
       const channelName = decodeURIComponent(channelWebhookMatch[1] ?? "");
       const rawBody = await readRawBody(req);
@@ -311,19 +854,127 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && pathname === "/engineer/dashboard") {
-      json(res, 200, { ok: true, dashboard: await engineer.getDashboard() });
+      json(res, 200, { ok: true, dashboard: await engineer.getDashboard(tenantId) });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/orchestrator/runs") {
+      const body = await readJson(req);
+      const preferredRoles = parseOrchestrationRoles(body.preferredRoles);
+      const tags = stringArray(body.tags);
+      const quota = await usage.tryConsume({
+        tenantId,
+        userId: requestIdentity?.user.id ?? "web-user",
+        kind: "workflow_run",
+        units: 10,
+        metadata: { feature: "deploy_flow" },
+      });
+      if (!quota.allowed) {
+        json(res, 429, { ok: false, error: quota.reason, usage: quota });
+        return;
+      }
+      const run = await orchestrator.startGoal(
+        {
+          goal: requiredString(body, "goal"),
+          tenantId,
+          ...(preferredRoles?.length ? { preferredRoles } : {}),
+          ...(tags?.length ? { tags } : {}),
+          traceId,
+        },
+        {
+          sessionId: requestIdentity?.sessionId ?? crypto.randomUUID(),
+          userId: requestIdentity?.user.id ?? "web-user",
+          tenantId,
+          workspaceRoot: resolve(config.workspaceRoot, tenantId),
+        },
+      );
+      json(res, 202, { ok: true, runId: run.id, run });
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/orchestrator/runs") {
+      const limit = Number(url.searchParams.get("limit") ?? "50");
+      json(res, 200, { ok: true, runs: await orchestrator.listRuns(Number.isFinite(limit) ? limit : 50, tenantId) });
+      return;
+    }
+
+    const orchestrationStreamMatch = pathname.match(/^\/orchestrator\/runs\/([^/]+)\/events$/);
+    if (req.method === "GET" && orchestrationStreamMatch) {
+      const runId = decodeURIComponent(orchestrationStreamMatch[1] ?? "");
+      await orchestrator.getRun(runId, tenantId);
+      res.writeHead(200, {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache, no-store",
+        connection: "keep-alive",
+        "x-accel-buffering": "no",
+      });
+
+      let closed = false;
+      const send = (event: string, payload: unknown): void => {
+        if (closed || res.writableEnded) return;
+        res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
+      };
+      send("snapshot", await orchestrationSnapshot(runId));
+      const unsubscribe = agenticStore.subscribe(runId, (event) => {
+        send("update", event);
+        const payload = event.payload as { status?: string } | undefined;
+        if (event.type === "run.updated" && payload?.status && payload.status !== "running") {
+          setTimeout(() => {
+            if (closed) return;
+            cleanup();
+            res.end();
+          }, 25);
+        }
+      });
+      const heartbeat = setInterval(() => send("heartbeat", { at: new Date().toISOString() }), 15_000);
+      const cleanup = (): void => {
+        if (closed) return;
+        closed = true;
+        clearInterval(heartbeat);
+        unsubscribe();
+      };
+      req.on("close", cleanup);
+      res.on("close", cleanup);
+      return;
+    }
+
+    const orchestrationLogsMatch = pathname.match(/^\/orchestrator\/runs\/([^/]+)\/logs$/);
+    if (req.method === "GET" && orchestrationLogsMatch) {
+      const runId = decodeURIComponent(orchestrationLogsMatch[1] ?? "");
+      await orchestrator.getRun(runId, tenantId);
+      const limit = Number(url.searchParams.get("limit") ?? "500");
+      const since = Number(url.searchParams.get("since") ?? "0");
+      const taskId = url.searchParams.get("taskId") || undefined;
+      json(res, 200, {
+        ok: true,
+        logs: await agenticStore.listLogs({
+          runId,
+          ...(taskId ? { taskId } : {}),
+          ...(Number.isFinite(since) && since > 0 ? { since } : {}),
+          limit: Number.isFinite(limit) ? limit : 500,
+        }),
+      });
+      return;
+    }
+
+    const orchestrationRunMatch = pathname.match(/^\/orchestrator\/runs\/([^/]+)$/);
+    if (req.method === "GET" && orchestrationRunMatch) {
+      const runId = decodeURIComponent(orchestrationRunMatch[1] ?? "");
+      const run = await orchestrator.getRun(runId, tenantId);
+      json(res, 200, { ok: true, ...(await orchestrationSnapshot(run.id)) });
       return;
     }
 
     if (req.method === "GET" && pathname === "/engineer/loops") {
       const status = parseEngineerStatus(url.searchParams.get("status"));
-      json(res, 200, { ok: true, loops: await engineer.listLoops(status) });
+      json(res, 200, { ok: true, loops: await engineer.listLoops(status, tenantId) });
       return;
     }
 
     if (req.method === "POST" && pathname === "/engineer/loops") {
       const body = await readJson(req);
       const loop = await engineer.startLoop({
+        tenantId,
         objective: requiredString(body, "objective"),
         successCriteria: stringArray(body.successCriteria) ?? [],
         ...(typeof body.maxIterations === "number" ? { maxIterations: body.maxIterations } : {}),
@@ -336,7 +987,7 @@ const server = createServer(async (req, res) => {
 
     const engineerLoopMatch = pathname.match(/^\/engineer\/loops\/([^/]+)$/);
     if (req.method === "GET" && engineerLoopMatch) {
-      json(res, 200, { ok: true, loop: await engineer.getLoop(decodeURIComponent(engineerLoopMatch[1] ?? "")) });
+      json(res, 200, { ok: true, loop: await engineer.getLoop(decodeURIComponent(engineerLoopMatch[1] ?? ""), tenantId) });
       return;
     }
 
@@ -347,6 +998,7 @@ const server = createServer(async (req, res) => {
       const nextPhase = parseOptionalEngineerPhase(body.nextPhase);
       const loop = await engineer.recordPhase({
         loopId: decodeURIComponent(engineerPhaseMatch[1] ?? ""),
+        tenantId,
         phase: parseEngineerPhase(body.phase),
         summary: requiredString(body, "summary"),
         ...(evidence ? { evidence } : {}),
@@ -363,6 +1015,7 @@ const server = createServer(async (req, res) => {
       const body = await readJson(req);
       const loop = await engineer.nextIteration({
         loopId: decodeURIComponent(engineerIterationMatch[1] ?? ""),
+        tenantId,
         diagnosis: requiredString(body, "diagnosis"),
         nextAction: requiredString(body, "nextAction"),
       });
@@ -376,18 +1029,18 @@ const server = createServer(async (req, res) => {
       const action = engineerActionMatch[2];
       const body = await readJson(req);
       if (action === "block") {
-        json(res, 200, { ok: true, loop: await engineer.blockLoop(id, requiredString(body, "reason")) });
+        json(res, 200, { ok: true, loop: await engineer.blockLoop(id, requiredString(body, "reason"), tenantId) });
         return;
       }
       if (action === "resume") {
-        json(res, 200, { ok: true, loop: await engineer.resumeLoop(id, optionalString(body, "note")) });
+        json(res, 200, { ok: true, loop: await engineer.resumeLoop(id, optionalString(body, "note"), tenantId) });
         return;
       }
       if (action === "fail") {
-        json(res, 200, { ok: true, loop: await engineer.failLoop(id, requiredString(body, "reason")) });
+        json(res, 200, { ok: true, loop: await engineer.failLoop(id, requiredString(body, "reason"), tenantId) });
         return;
       }
-      json(res, 200, { ok: true, loop: await engineer.abortLoop(id, requiredString(body, "reason")) });
+      json(res, 200, { ok: true, loop: await engineer.abortLoop(id, requiredString(body, "reason"), tenantId) });
       return;
     }
 
@@ -397,6 +1050,7 @@ const server = createServer(async (req, res) => {
       const prevention = stringArray(body.prevention);
       const result = await engineer.completeLoop({
         loopId: decodeURIComponent(engineerCompleteMatch[1] ?? ""),
+        tenantId,
         outcome: requiredString(body, "outcome"),
         rootCause: requiredString(body, "rootCause"),
         fix: requiredString(body, "fix"),
@@ -410,19 +1064,19 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "GET" && pathname === "/engineer/runbooks") {
       const limit = Number(url.searchParams.get("limit") ?? "50");
-      json(res, 200, { ok: true, runbooks: await engineer.listRunbooks(Number.isFinite(limit) ? limit : 50) });
+      json(res, 200, { ok: true, runbooks: await engineer.listRunbooks(Number.isFinite(limit) ? limit : 50, tenantId) });
       return;
     }
 
     if (req.method === "GET" && pathname === "/planner/dashboard") {
-      json(res, 200, { ok: true, dashboard: await planner.getDashboard() });
+      json(res, 200, { ok: true, dashboard: await planner.getDashboard(new Date(), tenantId) });
       return;
     }
 
     if (req.method === "GET" && pathname === "/planner/items") {
       const status = parseStatus(url.searchParams.get("status"));
       const flowId = url.searchParams.get("flowId")?.trim() || undefined;
-      json(res, 200, { ok: true, items: await planner.listItems({ ...(status ? { status } : {}), ...(flowId ? { flowId } : {}) }) });
+      json(res, 200, { ok: true, items: await planner.listItems({ ...(status ? { status } : {}), ...(flowId ? { flowId } : {}), tenantId }) });
       return;
     }
 
@@ -434,6 +1088,7 @@ const server = createServer(async (req, res) => {
       const dependsOn = stringArray(body.dependsOn);
       const item = await planner.createItem({
         title: requiredString(body, "title"),
+        tenantId,
         ...(optionalString(body, "description") ? { description: optionalString(body, "description") } : {}),
         ...(status ? { status } : {}),
         ...(priority ? { priority } : {}),
@@ -467,7 +1122,7 @@ const server = createServer(async (req, res) => {
         ...(body.dueAt === null || typeof body.dueAt === "string" ? { dueAt: body.dueAt } : {}),
         ...(body.durationMinutes === null || typeof body.durationMinutes === "number" ? { durationMinutes: body.durationMinutes } : {}),
         ...(typeof body.timezone === "string" ? { timezone: body.timezone } : {}),
-      });
+      }, tenantId);
       json(res, 200, { ok: true, item });
       return;
     }
@@ -475,7 +1130,7 @@ const server = createServer(async (req, res) => {
     const dependencyMatch = pathname.match(/^\/planner\/items\/([^/]+)\/dependencies$/);
     if (req.method === "POST" && dependencyMatch) {
       const body = await readJson(req);
-      const item = await planner.addDependency(decodeURIComponent(dependencyMatch[1] ?? ""), requiredString(body, "dependencyId"));
+      const item = await planner.addDependency(decodeURIComponent(dependencyMatch[1] ?? ""), requiredString(body, "dependencyId"), tenantId);
       json(res, 200, { ok: true, item });
       return;
     }
@@ -483,7 +1138,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && pathname === "/planner/reminders") {
       const enabledParam = url.searchParams.get("enabled");
       const enabled = enabledParam === "true" ? true : enabledParam === "false" ? false : undefined;
-      json(res, 200, { ok: true, reminders: await planner.listReminders(enabled) });
+      json(res, 200, { ok: true, reminders: await planner.listReminders(enabled, tenantId) });
       return;
     }
 
@@ -492,6 +1147,7 @@ const server = createServer(async (req, res) => {
       const channels = parseChannels(body.channels);
       const reminder = await planner.createReminder({
         title: requiredString(body, "title"),
+        tenantId,
         schedule: parseSchedule(body.schedule),
         ...(optionalString(body, "message") ? { message: optionalString(body, "message") } : {}),
         ...(optionalString(body, "itemId") ? { itemId: optionalString(body, "itemId") } : {}),
@@ -506,7 +1162,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && reminderEnabledMatch) {
       const body = await readJson(req);
       if (typeof body.enabled !== "boolean") throw new Error("enabled must be boolean");
-      const reminder = await planner.setReminderEnabled(decodeURIComponent(reminderEnabledMatch[1] ?? ""), body.enabled);
+      const reminder = await planner.setReminderEnabled(decodeURIComponent(reminderEnabledMatch[1] ?? ""), body.enabled, tenantId);
       json(res, 200, { ok: true, reminder });
       return;
     }
@@ -514,7 +1170,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && pathname === "/planner/alerts") {
       const unreadOnly = url.searchParams.get("unread") === "true";
       const limit = Number(url.searchParams.get("limit") ?? "100");
-      json(res, 200, { ok: true, alerts: await planner.listAlerts({ unreadOnly, limit: Number.isFinite(limit) ? limit : 100 }) });
+      json(res, 200, { ok: true, alerts: await planner.listAlerts({ unreadOnly, limit: Number.isFinite(limit) ? limit : 100, tenantId }) });
       return;
     }
 
@@ -523,12 +1179,12 @@ const server = createServer(async (req, res) => {
       const id = decodeURIComponent(alertActionMatch[1] ?? "");
       const action = alertActionMatch[2];
       if (action === "read") {
-        json(res, 200, { ok: true, alert: await planner.markAlertRead(id) });
+        json(res, 200, { ok: true, alert: await planner.markAlertRead(id, tenantId) });
         return;
       }
       const body = await readJson(req);
       const minutes = Number(body.minutes);
-      json(res, 200, { ok: true, alert: await planner.snoozeAlert(id, minutes) });
+      json(res, 200, { ok: true, alert: await planner.snoozeAlert(id, minutes, tenantId) });
       return;
     }
 
@@ -538,7 +1194,11 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && pathname === "/approvals") {
-      json(res, 200, { ok: true, approvals: approvalGate.list("pending").map(publicApproval) });
+      const approvals = approvalGate.list("pending").filter((item) =>
+        item.context.tenantId === tenantId
+          && (!requestIdentity || requestIdentity.user.role === "admin" || item.context.userId === requestIdentity.user.id),
+      );
+      json(res, 200, { ok: true, approvals: approvals.map(publicApproval) });
       return;
     }
 
@@ -546,6 +1206,24 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && approvalAction) {
       const id = decodeURIComponent(approvalAction[1] ?? "");
       const action = approvalAction[2];
+      const pending = approvalGate.get(id);
+      if (
+        !pending
+        || pending.context.tenantId !== tenantId
+        || (requestIdentity && requestIdentity.user.role !== "admin" && pending.context.userId !== requestIdentity.user.id)
+      ) {
+        if (requestIdentity) audit.log({
+          action: "rbac_deny",
+          userId: requestIdentity.user.id,
+          sessionId: requestIdentity.sessionId,
+          path: pathname,
+          method: req.method ?? "UNKNOWN",
+          resultStatus: "denied",
+          metadata: { resource: "approval", approvalId: id },
+        });
+        json(res, 403, { ok: false, error: "You cannot manage this approval" });
+        return;
+      }
 
       if (action === "deny") {
         const denied = approvalGate.deny(id);
@@ -570,8 +1248,13 @@ const server = createServer(async (req, res) => {
       }
 
       const sessionId = typeof body.sessionId === "string" ? body.sessionId : crypto.randomUUID();
-      const userId = typeof body.userId === "string" ? body.userId : "web-user";
-      const result = await agent.run(message, { sessionId, userId });
+      const userId = requestIdentity?.user.id ?? "web-user";
+      const result = await agent.run(message, {
+        sessionId,
+        userId,
+        tenantId,
+        traceId,
+      });
       json(res, 200, { ok: true, ...result });
       return;
     }
@@ -582,6 +1265,10 @@ const server = createServer(async (req, res) => {
     const message = error instanceof Error ? error.message : String(error);
     const status = message.includes("not found") || message.startsWith("Unknown channel adapter")
       ? 404
+      : message.startsWith("File exceeds")
+        ? 413
+        : message.startsWith("Only ") || message.startsWith("Legacy ") || message.startsWith("Executable ") || message.startsWith("Macro-enabled ") || message.includes("signature") || message.includes("content type") || message.includes("MIME")
+          ? 415
       : message.startsWith("Webhook verification failed")
         ? 401
         : message.startsWith("Channel adapter is not configured")

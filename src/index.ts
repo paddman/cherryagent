@@ -15,7 +15,7 @@ try {
     if (message === "/exit" || message === "/quit") break;
 
     try {
-      const result = await agent.run(message, { sessionId: "cli-session", userId: "local-user" });
+      const result = await agent.run(message, { sessionId: "cli-session", userId: "local-user", tenantId: "org-default" });
       console.log(`\nCherry > ${result.answer}`);
       console.log(`[${result.steps} agent step${result.steps === 1 ? "" : "s"}]\n`);
     } catch (error) {

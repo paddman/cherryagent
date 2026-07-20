@@ -9,6 +9,8 @@ const approvalsEl = document.getElementById("approvals");
 const messagesEl = document.getElementById("messages");
 const inputEl = document.getElementById("messageInput");
 const sendBtn = document.getElementById("sendBtn");
+const authTokenKey = "cherry-auth-token";
+let authRedirected = false;
 
 function addMessage(role, text, meta = "") {
   const article = document.createElement("article");
@@ -27,8 +29,17 @@ function addMessage(role, text, meta = "") {
 }
 
 async function fetchJson(url, options = {}) {
-  const response = await fetch(url, options);
+  const headers = new Headers(options.headers || {});
+  headers.set("content-type", "application/json");
+  const token = sessionStorage.getItem(authTokenKey);
+  if (token) headers.set("authorization", `Bearer ${token}`);
+  const response = await fetch(url, { ...options, headers });
   const body = await response.json().catch(() => ({}));
+  if (response.status === 401 && !authRedirected) {
+    authRedirected = true;
+    sessionStorage.removeItem(authTokenKey);
+    window.location.href = "./index.html";
+  }
   if (!response.ok) throw new Error(body.error || `${response.status} ${response.statusText}`);
   return body;
 }
@@ -71,7 +82,7 @@ async function sendChat(message, showMessages = true) {
   const result = await fetchJson(`${backendUrl}/chat`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ message, sessionId, userId: "windows-desktop-user" }),
+    body: JSON.stringify({ message, sessionId }),
   });
   if (showMessages) {
     const meta = result.correctness

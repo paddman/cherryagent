@@ -1,12 +1,14 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { computeNextRunAt, type NotificationChannel, type ScheduleSpec } from "./schedule.js";
+import { DEFAULT_TENANT_ID } from "../tenancy/constants.js";
 
 export type PlanStatus = "inbox" | "planned" | "doing" | "waiting" | "done" | "cancelled";
 export type PlanPriority = "low" | "normal" | "high" | "urgent";
 
 export type PlanItem = {
   id: string;
+  tenantId: string;
   title: string;
   description?: string;
   status: PlanStatus;
@@ -25,6 +27,7 @@ export type PlanItem = {
 
 export type PlannerReminder = {
   id: string;
+  tenantId: string;
   itemId?: string;
   title: string;
   message: string;
@@ -39,6 +42,7 @@ export type PlannerReminder = {
 
 export type PlannerAlert = {
   id: string;
+  tenantId: string;
   reminderId: string;
   itemId?: string;
   title: string;
@@ -126,9 +130,9 @@ export class PlannerStore {
       const parsed = JSON.parse(await readFile(this.filePath, "utf8")) as Partial<PlannerData>;
       return {
         version: 1,
-        items: Array.isArray(parsed.items) ? parsed.items : [],
-        reminders: Array.isArray(parsed.reminders) ? parsed.reminders : [],
-        alerts: Array.isArray(parsed.alerts) ? parsed.alerts : [],
+        items: (Array.isArray(parsed.items) ? parsed.items : []).map((item) => ({ ...(item as PlanItem), tenantId: (item as PlanItem).tenantId || DEFAULT_TENANT_ID })),
+        reminders: (Array.isArray(parsed.reminders) ? parsed.reminders : []).map((item) => ({ ...(item as PlannerReminder), tenantId: (item as PlannerReminder).tenantId || DEFAULT_TENANT_ID })),
+        alerts: (Array.isArray(parsed.alerts) ? parsed.alerts : []).map((item) => ({ ...(item as PlannerAlert), tenantId: (item as PlannerAlert).tenantId || DEFAULT_TENANT_ID })),
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptyPlannerData();
@@ -173,6 +177,7 @@ export class PlannerStore {
     durationMinutes?: number | undefined;
     timezone?: string | undefined;
     dependsOn?: string[] | undefined;
+    tenantId?: string | undefined;
   }): Promise<PlanItem> {
     return this.#mutate((data) => {
       const title = input.title.trim();
@@ -184,6 +189,7 @@ export class PlannerStore {
       const now = isoNow();
       const item: PlanItem = {
         id: crypto.randomUUID(),
+        tenantId: input.tenantId ?? DEFAULT_TENANT_ID,
         title,
         status,
         priority,
@@ -199,7 +205,7 @@ export class PlannerStore {
         ...(input.timezone?.trim() ? { timezone: input.timezone.trim() } : {}),
       };
       for (const dependencyId of item.dependsOn) {
-        if (!data.items.some((candidate) => candidate.id === dependencyId)) {
+        if (!data.items.some((candidate) => candidate.id === dependencyId && candidate.tenantId === item.tenantId)) {
           throw new Error(`Dependency not found: ${dependencyId}`);
         }
       }
@@ -208,11 +214,12 @@ export class PlannerStore {
     });
   }
 
-  async listItems(filter: { status?: PlanStatus; flowId?: string } = {}): Promise<PlanItem[]> {
+  async listItems(filter: { status?: PlanStatus; flowId?: string; tenantId?: string } = {}): Promise<PlanItem[]> {
     const { items } = await this.read();
     return items
       .filter((item) => !filter.status || item.status === filter.status)
       .filter((item) => !filter.flowId || item.flowId === filter.flowId)
+      .filter((item) => !filter.tenantId || item.tenantId === filter.tenantId)
       .sort((a, b) => (a.startAt ?? a.dueAt ?? a.createdAt).localeCompare(b.startAt ?? b.dueAt ?? b.createdAt));
   }
 
@@ -230,9 +237,10 @@ export class PlannerStore {
       durationMinutes?: number | null;
       timezone?: string;
     },
+    tenantId?: string,
   ): Promise<PlanItem> {
     return this.#mutate((data) => {
-      const item = data.items.find((candidate) => candidate.id === id);
+      const item = data.items.find((candidate) => candidate.id === id && (!tenantId || candidate.tenantId === tenantId));
       if (!item) throw new Error(`Plan item not found: ${id}`);
       if (patch.title !== undefined) {
         const title = patch.title.trim();
@@ -270,15 +278,15 @@ export class PlannerStore {
     });
   }
 
-  async setItemStatus(id: string, status: PlanStatus): Promise<PlanItem> {
-    return this.updateItem(id, { status });
+  async setItemStatus(id: string, status: PlanStatus, tenantId?: string): Promise<PlanItem> {
+    return this.updateItem(id, { status }, tenantId);
   }
 
-  async addDependency(itemId: string, dependencyId: string): Promise<PlanItem> {
+  async addDependency(itemId: string, dependencyId: string, tenantId?: string): Promise<PlanItem> {
     if (itemId === dependencyId) throw new Error("A plan item cannot depend on itself");
     return this.#mutate((data) => {
-      const item = data.items.find((candidate) => candidate.id === itemId);
-      const dependency = data.items.find((candidate) => candidate.id === dependencyId);
+      const item = data.items.find((candidate) => candidate.id === itemId && (!tenantId || candidate.tenantId === tenantId));
+      const dependency = data.items.find((candidate) => candidate.id === dependencyId && (!tenantId || candidate.tenantId === tenantId));
       if (!item) throw new Error(`Plan item not found: ${itemId}`);
       if (!dependency) throw new Error(`Dependency not found: ${dependencyId}`);
 
@@ -286,7 +294,7 @@ export class PlannerStore {
         if (id === itemId) return true;
         if (visited.has(id)) return false;
         visited.add(id);
-        const node = data.items.find((candidate) => candidate.id === id);
+        const node = data.items.find((candidate) => candidate.id === id && (!tenantId || candidate.tenantId === tenantId));
         return node ? node.dependsOn.some((nextId) => walk(nextId, visited)) : false;
       };
       if (walk(dependencyId)) throw new Error("Dependency would create a cycle");
@@ -303,17 +311,19 @@ export class PlannerStore {
     schedule: ScheduleSpec;
     channels?: NotificationChannel[] | undefined;
     enabled?: boolean | undefined;
+    tenantId?: string | undefined;
   }): Promise<PlannerReminder> {
     return this.#mutate((data) => {
       const title = input.title.trim();
       if (!title) throw new Error("Reminder title is required");
-      if (input.itemId && !data.items.some((item) => item.id === input.itemId)) {
+      if (input.itemId && !data.items.some((item) => item.id === input.itemId && item.tenantId === (input.tenantId ?? DEFAULT_TENANT_ID))) {
         throw new Error(`Plan item not found: ${input.itemId}`);
       }
       const now = isoNow();
       const nextRunAt = computeNextRunAt(input.schedule, new Date());
       const reminder: PlannerReminder = {
         id: crypto.randomUUID(),
+        tenantId: input.tenantId ?? DEFAULT_TENANT_ID,
         title,
         message: input.message?.trim() || title,
         schedule: input.schedule,
@@ -332,16 +342,17 @@ export class PlannerStore {
     });
   }
 
-  async listReminders(enabled?: boolean): Promise<PlannerReminder[]> {
+  async listReminders(enabled?: boolean, tenantId?: string): Promise<PlannerReminder[]> {
     const { reminders } = await this.read();
     return reminders
       .filter((item) => enabled === undefined || item.enabled === enabled)
+      .filter((item) => !tenantId || item.tenantId === tenantId)
       .sort((a, b) => (a.nextRunAt ?? "9999").localeCompare(b.nextRunAt ?? "9999"));
   }
 
-  async setReminderEnabled(id: string, enabled: boolean): Promise<PlannerReminder> {
+  async setReminderEnabled(id: string, enabled: boolean, tenantId?: string): Promise<PlannerReminder> {
     return this.#mutate((data) => {
-      const reminder = data.reminders.find((item) => item.id === id);
+      const reminder = data.reminders.find((item) => item.id === id && (!tenantId || item.tenantId === tenantId));
       if (!reminder) throw new Error(`Reminder not found: ${id}`);
       reminder.enabled = enabled;
       reminder.updatedAt = isoNow();
@@ -353,16 +364,16 @@ export class PlannerStore {
     });
   }
 
-  async getDueReminders(now = new Date()): Promise<PlannerReminder[]> {
+  async getDueReminders(now = new Date(), tenantId?: string): Promise<PlannerReminder[]> {
     const { reminders } = await this.read();
     return reminders.filter(
-      (reminder) => reminder.enabled && reminder.nextRunAt !== undefined && new Date(reminder.nextRunAt).getTime() <= now.getTime(),
+      (reminder) => (!tenantId || reminder.tenantId === tenantId) && reminder.enabled && reminder.nextRunAt !== undefined && new Date(reminder.nextRunAt).getTime() <= now.getTime(),
     );
   }
 
-  async fireReminder(id: string, now = new Date()): Promise<{ reminder: PlannerReminder; alert: PlannerAlert }> {
+  async fireReminder(id: string, now = new Date(), tenantId?: string): Promise<{ reminder: PlannerReminder; alert: PlannerAlert }> {
     return this.#mutate((data) => {
-      const reminder = data.reminders.find((item) => item.id === id);
+      const reminder = data.reminders.find((item) => item.id === id && (!tenantId || item.tenantId === tenantId));
       if (!reminder) throw new Error(`Reminder not found: ${id}`);
       if (!reminder.enabled) throw new Error(`Reminder is disabled: ${id}`);
       if (!reminder.nextRunAt || new Date(reminder.nextRunAt).getTime() > now.getTime()) {
@@ -372,6 +383,7 @@ export class PlannerStore {
       const firedAt = now.toISOString();
       const alert: PlannerAlert = {
         id: crypto.randomUUID(),
+        tenantId: reminder.tenantId,
         reminderId: reminder.id,
         title: reminder.title,
         message: reminder.message,
@@ -392,29 +404,30 @@ export class PlannerStore {
     });
   }
 
-  async listAlerts(options: { unreadOnly?: boolean; limit?: number } = {}): Promise<PlannerAlert[]> {
+  async listAlerts(options: { unreadOnly?: boolean; limit?: number; tenantId?: string } = {}): Promise<PlannerAlert[]> {
     const { alerts } = await this.read();
     return alerts
       .filter((alert) => !options.unreadOnly || !alert.readAt)
+      .filter((alert) => !options.tenantId || alert.tenantId === options.tenantId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, Math.min(Math.max(options.limit ?? 100, 1), 500));
   }
 
-  async markAlertRead(id: string): Promise<PlannerAlert> {
+  async markAlertRead(id: string, tenantId?: string): Promise<PlannerAlert> {
     return this.#mutate((data) => {
-      const alert = data.alerts.find((item) => item.id === id);
+      const alert = data.alerts.find((item) => item.id === id && (!tenantId || item.tenantId === tenantId));
       if (!alert) throw new Error(`Alert not found: ${id}`);
       alert.readAt = isoNow();
       return alert;
     });
   }
 
-  async snoozeAlert(id: string, minutes: number): Promise<PlannerAlert> {
+  async snoozeAlert(id: string, minutes: number, tenantId?: string): Promise<PlannerAlert> {
     if (!Number.isFinite(minutes) || minutes < 1 || minutes > 43_200) {
       throw new Error("Snooze minutes must be between 1 and 43200");
     }
     return this.#mutate((data) => {
-      const alert = data.alerts.find((item) => item.id === id);
+      const alert = data.alerts.find((item) => item.id === id && (!tenantId || item.tenantId === tenantId));
       if (!alert) throw new Error(`Alert not found: ${id}`);
       alert.readAt = isoNow();
       alert.snoozedUntil = new Date(Date.now() + Math.round(minutes) * 60_000).toISOString();
@@ -423,15 +436,18 @@ export class PlannerStore {
     });
   }
 
-  async releaseDueSnoozes(now = new Date()): Promise<PlannerAlert[]> {
+  async releaseDueSnoozes(now = new Date(), tenantId?: string): Promise<PlannerAlert[]> {
     return this.#mutate((data) => {
       const released: PlannerAlert[] = [];
       for (const source of data.alerts) {
+        if ((!tenantId || source.tenantId === tenantId) && (!source.snoozedUntil || source.snoozeReleasedAt)) continue;
+        if (tenantId && source.tenantId !== tenantId) continue;
         if (!source.snoozedUntil || source.snoozeReleasedAt) continue;
         if (new Date(source.snoozedUntil).getTime() > now.getTime()) continue;
         source.snoozeReleasedAt = now.toISOString();
         const alert: PlannerAlert = {
           id: crypto.randomUUID(),
+          tenantId: source.tenantId,
           reminderId: source.reminderId,
           title: source.title,
           message: source.message,
@@ -446,11 +462,11 @@ export class PlannerStore {
     });
   }
 
-  async getDashboard(now = new Date()): Promise<PlannerDashboard> {
+  async getDashboard(now = new Date(), tenantId?: string): Promise<PlannerDashboard> {
     const data = await this.read();
     const dayStart = startOfDay(now).getTime();
     const dayEnd = endOfDay(now).getTime();
-    const activeItems = data.items.filter((item) => item.status !== "cancelled");
+    const activeItems = data.items.filter((item) => (!tenantId || item.tenantId === tenantId) && item.status !== "cancelled");
     const today = activeItems.filter((item) => {
       const value = item.startAt ?? item.dueAt;
       if (!value) return false;
@@ -468,10 +484,10 @@ export class PlannerStore {
 
     const flow = Object.fromEntries(statuses.map((status) => [status, activeItems.filter((item) => item.status === status)])) as Record<PlanStatus, PlanItem[]>;
     const reminders = data.reminders
-      .filter((item) => item.enabled)
+      .filter((item) => item.enabled && (!tenantId || item.tenantId === tenantId))
       .sort((a, b) => (a.nextRunAt ?? "9999").localeCompare(b.nextRunAt ?? "9999"))
       .slice(0, 20);
-    const alerts = data.alerts.filter((item) => !item.readAt).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 30);
+    const alerts = data.alerts.filter((item) => (!tenantId || item.tenantId === tenantId) && !item.readAt).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 30);
 
     return {
       generatedAt: now.toISOString(),
@@ -482,7 +498,7 @@ export class PlannerStore {
         waiting: flow.waiting.length,
         done: flow.done.length,
         unreadAlerts: alerts.length,
-        activeReminders: data.reminders.filter((item) => item.enabled).length,
+        activeReminders: data.reminders.filter((item) => item.enabled && (!tenantId || item.tenantId === tenantId)).length,
       },
       today: today.sort((a, b) => (a.startAt ?? a.dueAt ?? a.createdAt).localeCompare(b.startAt ?? b.dueAt ?? b.createdAt)),
       overdue: overdue.sort((a, b) => (a.dueAt ?? "9999").localeCompare(b.dueAt ?? "9999")),

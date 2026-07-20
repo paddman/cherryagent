@@ -137,6 +137,10 @@ CHERRY_LLM_BASE_URL=http://127.0.0.1:8000/v1
 CHERRY_LLM_API_KEY=local
 CHERRY_LLM_MODEL=qwen3.6-27b
 
+# CherryAgent API authentication (required before the backend starts)
+CHERRY_AUTH_ADMIN_EMAIL=padd@cherrydeskx.com
+# Set CHERRY_AUTH_ADMIN_PASSWORD to a unique value with at least 12 characters.
+
 # Optional multimodal model. Defaults to the main LLM settings.
 CHERRY_VISION_BASE_URL=http://127.0.0.1:8000/v1
 CHERRY_VISION_API_KEY=local

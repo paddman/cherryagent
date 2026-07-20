@@ -1,6 +1,7 @@
 import type { AgentTool, ToolContext, ToolDefinition } from "../core/types.js";
 import type { ApprovalGate } from "../safety/ApprovalGate.js";
 import { getAuditLogger, AuditLogger } from "../audit/AuditLogger.js";
+import type { UsageStore } from "../usage/UsageStore.js";
 
 export type ToolExecutionResult = {
   ok: boolean;
@@ -18,6 +19,7 @@ export class ToolRegistry {
   constructor(
     private readonly approvalGate: ApprovalGate,
     audit?: AuditLogger,
+    private readonly usage?: UsageStore,
   ) {
     // ถ้าไม่ส่ง audit มา ใช้ singleton (default — ทำให้ backward-compatible)
     this.#audit = audit ?? getAuditLogger();
@@ -35,8 +37,8 @@ export class ToolRegistry {
     return [...this.#tools.values()];
   }
 
-  definitions(): ToolDefinition[] {
-    return this.list().map((tool) => ({
+  definitions(names?: ReadonlySet<string>): ToolDefinition[] {
+    return this.list().filter((tool) => !names || names.has(tool.name)).map((tool) => ({
       type: "function",
       function: {
         name: tool.name,
@@ -57,6 +59,7 @@ export class ToolRegistry {
         action: "tool_call",
         userId: context.userId,
         sessionId: context.sessionId,
+        ...(context.traceId ? { traceId: context.traceId } : {}),
         tool: name,
         args,
         resultStatus: "error",
@@ -72,6 +75,7 @@ export class ToolRegistry {
         action: "tool_pending",
         userId: context.userId,
         sessionId: context.sessionId,
+        ...(context.traceId ? { traceId: context.traceId } : {}),
         tool: name,
         risk: tool.risk,
         args,
@@ -87,6 +91,8 @@ export class ToolRegistry {
       };
     }
 
+    const quota = await this.reserveUsage(tool, context);
+    if (quota) return quota;
     return this.executeTool(tool, args, context);
   }
 
@@ -101,6 +107,7 @@ export class ToolRegistry {
         action: "tool_call",
         userId: context.userId,
         sessionId: context.sessionId,
+        ...(context.traceId ? { traceId: context.traceId } : {}),
         tool: name,
         args,
         resultStatus: "error",
@@ -114,12 +121,33 @@ export class ToolRegistry {
       action: "tool_approve",
       userId: context.userId,
       sessionId: context.sessionId,
+      ...(context.traceId ? { traceId: context.traceId } : {}),
       tool: name,
       risk: tool.risk,
       args,
       resultStatus: "ok",
     });
+    const quota = await this.reserveUsage(tool, context);
+    if (quota) return quota;
     return this.executeTool(tool, args, context);
+  }
+
+  private async reserveUsage(tool: AgentTool, context: ToolContext): Promise<ToolExecutionResult | undefined> {
+    if (!this.usage) return undefined;
+    const decision = await this.usage.tryConsume({
+      tenantId: context.tenantId,
+      userId: context.userId,
+      kind: "tool_call",
+      tool: tool.name,
+      risk: tool.risk,
+    });
+    if (decision.allowed) return undefined;
+    return {
+      ok: false,
+      tool: tool.name,
+      blocked: true,
+      error: `${decision.reason ?? "Usage budget exceeded"}. Remaining credits: ${decision.remaining}.`,
+    };
   }
 
   private async executeTool(
@@ -134,6 +162,7 @@ export class ToolRegistry {
         action: "tool_call",
         userId: context.userId,
         sessionId: context.sessionId,
+        ...(context.traceId ? { traceId: context.traceId } : {}),
         tool: tool.name,
         risk: tool.risk,
         args,
@@ -147,6 +176,7 @@ export class ToolRegistry {
         action: "tool_call",
         userId: context.userId,
         sessionId: context.sessionId,
+        ...(context.traceId ? { traceId: context.traceId } : {}),
         tool: tool.name,
         risk: tool.risk,
         args,

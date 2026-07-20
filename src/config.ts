@@ -171,6 +171,16 @@ export const config = {
   memoryFile: resolve(process.env.CHERRY_MEMORY_FILE ?? ".cherry/memory.json"),
   plannerFile: resolve(process.env.CHERRY_PLANNER_FILE ?? ".cherry/planner.json"),
   engineerFile: resolve(process.env.CHERRY_ENGINEER_FILE ?? ".cherry/engineer.json"),
+  usageFile: resolve(process.env.CHERRY_USAGE_FILE ?? ".cherry/usage.json"),
+  officeInboxFile: resolve(process.env.CHERRY_OFFICE_INBOX_FILE ?? ".cherry/office-inbox.json"),
+  reports: {
+    file: resolve(process.env.CHERRY_REPORT_FILE ?? ".cherry/reports.json"),
+    retentionDays: Math.max(1, integerEnv("CHERRY_REPORT_RETENTION_DAYS", 30)),
+    maxBytes: Math.max(1_000_000, integerEnv("CHERRY_REPORT_MAX_BYTES", 20 * 1024 * 1024)),
+    maxRows: Math.max(100, integerEnv("CHERRY_REPORT_MAX_ROWS", 100_000)),
+    maxColumns: Math.max(2, integerEnv("CHERRY_REPORT_MAX_COLUMNS", 100)),
+    modelTimeoutMs: Math.max(1_000, integerEnv("CHERRY_REPORT_MODEL_TIMEOUT_MS", 25_000)),
+  },
   scheduler: {
     intervalMs: Math.max(1_000, integerEnv("CHERRY_SCHEDULER_INTERVAL_MS", 15_000)),
   },
@@ -178,5 +188,13 @@ export const config = {
   server: {
     host: process.env.CHERRY_HOST ?? "0.0.0.0",
     port: integerEnv("CHERRY_PORT", 8787),
+  },
+  auth: {
+    enabled: booleanEnv("CHERRY_AUTH_ENABLED", true),
+    file: resolve(process.env.CHERRY_AUTH_FILE ?? ".cherry/auth.json"),
+    adminEmail: optionalEnv("CHERRY_AUTH_ADMIN_EMAIL") ?? "padd@cherrydeskx.com",
+    adminName: optionalEnv("CHERRY_AUTH_ADMIN_NAME") ?? "Cherry Admin",
+    adminPassword: optionalEnv("CHERRY_AUTH_ADMIN_PASSWORD"),
+    sessionTtlMs: Math.max(5, integerEnv("CHERRY_AUTH_SESSION_TTL_MINUTES", 480)) * 60_000,
   },
 } as const;

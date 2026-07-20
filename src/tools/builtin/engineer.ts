@@ -64,11 +64,12 @@ export function createEngineerTools(engine: EngineerLoopEngine): AgentTool[] {
         required: ["objective", "successCriteria"],
         additionalProperties: false,
       },
-      execute: async (args) => {
+      execute: async (args, context) => {
         const successCriteria = stringArray(args.successCriteria, "successCriteria") ?? [];
         return engine.startLoop({
           objective: requiredString(args, "objective"),
           successCriteria,
+          tenantId: context.tenantId,
           ...(typeof args.maxIterations === "number" ? { maxIterations: args.maxIterations } : {}),
           ...(optionalString(args, "planItemId") ? { planItemId: optionalString(args, "planItemId") } : {}),
           ...(optionalString(args, "hypothesis") ? { hypothesis: optionalString(args, "hypothesis") } : {}),
@@ -85,7 +86,7 @@ export function createEngineerTools(engine: EngineerLoopEngine): AgentTool[] {
         required: ["id"],
         additionalProperties: false,
       },
-      execute: async (args) => engine.getLoop(requiredString(args, "id")),
+      execute: async (args, context) => engine.getLoop(requiredString(args, "id"), context.tenantId),
     },
     {
       name: "engineer_list_loops",
@@ -96,7 +97,7 @@ export function createEngineerTools(engine: EngineerLoopEngine): AgentTool[] {
         properties: { status: { type: "string", enum: statuses } },
         additionalProperties: false,
       },
-      execute: async (args) => engine.listLoops(parseOptionalStatus(args.status)),
+      execute: async (args, context) => engine.listLoops(parseOptionalStatus(args.status), context.tenantId),
     },
     {
       name: "engineer_record_phase",
@@ -116,11 +117,12 @@ export function createEngineerTools(engine: EngineerLoopEngine): AgentTool[] {
         required: ["loopId", "phase", "summary"],
         additionalProperties: false,
       },
-      execute: async (args) => {
+      execute: async (args, context) => {
         const nextPhase = parseOptionalPhase(args.nextPhase);
         const evidence = stringArray(args.evidence, "evidence");
         return engine.recordPhase({
           loopId: requiredString(args, "loopId"),
+          tenantId: context.tenantId,
           phase: parsePhase(args.phase),
           summary: requiredString(args, "summary"),
           ...(evidence ? { evidence } : {}),
@@ -144,10 +146,11 @@ export function createEngineerTools(engine: EngineerLoopEngine): AgentTool[] {
         required: ["loopId", "diagnosis", "nextAction"],
         additionalProperties: false,
       },
-      execute: async (args) => engine.nextIteration({
+      execute: async (args, context) => engine.nextIteration({
         loopId: requiredString(args, "loopId"),
         diagnosis: requiredString(args, "diagnosis"),
         nextAction: requiredString(args, "nextAction"),
+        tenantId: context.tenantId,
       }),
     },
     {
@@ -160,7 +163,7 @@ export function createEngineerTools(engine: EngineerLoopEngine): AgentTool[] {
         required: ["loopId", "reason"],
         additionalProperties: false,
       },
-      execute: async (args) => engine.blockLoop(requiredString(args, "loopId"), requiredString(args, "reason")),
+      execute: async (args, context) => engine.blockLoop(requiredString(args, "loopId"), requiredString(args, "reason"), context.tenantId),
     },
     {
       name: "engineer_resume_loop",
@@ -172,9 +175,10 @@ export function createEngineerTools(engine: EngineerLoopEngine): AgentTool[] {
         required: ["loopId"],
         additionalProperties: false,
       },
-      execute: async (args) => engine.resumeLoop(
+      execute: async (args, context) => engine.resumeLoop(
         requiredString(args, "loopId"),
         optionalString(args, "note"),
+        context.tenantId,
       ),
     },
     {
@@ -195,10 +199,11 @@ export function createEngineerTools(engine: EngineerLoopEngine): AgentTool[] {
         required: ["loopId", "outcome", "rootCause", "fix"],
         additionalProperties: false,
       },
-      execute: async (args) => {
+      execute: async (args, context) => {
         const prevention = stringArray(args.prevention, "prevention");
         return engine.completeLoop({
           loopId: requiredString(args, "loopId"),
+          tenantId: context.tenantId,
           outcome: requiredString(args, "outcome"),
           rootCause: requiredString(args, "rootCause"),
           fix: requiredString(args, "fix"),
@@ -218,7 +223,7 @@ export function createEngineerTools(engine: EngineerLoopEngine): AgentTool[] {
         required: ["loopId", "reason"],
         additionalProperties: false,
       },
-      execute: async (args) => engine.failLoop(requiredString(args, "loopId"), requiredString(args, "reason")),
+      execute: async (args, context) => engine.failLoop(requiredString(args, "loopId"), requiredString(args, "reason"), context.tenantId),
     },
     {
       name: "engineer_abort_loop",
@@ -230,14 +235,14 @@ export function createEngineerTools(engine: EngineerLoopEngine): AgentTool[] {
         required: ["loopId", "reason"],
         additionalProperties: false,
       },
-      execute: async (args) => engine.abortLoop(requiredString(args, "loopId"), requiredString(args, "reason")),
+      execute: async (args, context) => engine.abortLoop(requiredString(args, "loopId"), requiredString(args, "reason"), context.tenantId),
     },
     {
       name: "engineer_get_dashboard",
       description: "Get engineering loop statistics, active loops, recent outcomes, and generated runbooks.",
       risk: "safe",
       parameters: { type: "object", properties: {}, additionalProperties: false },
-      execute: async () => engine.getDashboard(),
+      execute: async (_args, context) => engine.getDashboard(context.tenantId),
     },
     {
       name: "engineer_list_runbooks",
@@ -248,7 +253,7 @@ export function createEngineerTools(engine: EngineerLoopEngine): AgentTool[] {
         properties: { limit: { type: "number", minimum: 1, maximum: 500 } },
         additionalProperties: false,
       },
-      execute: async (args) => engine.listRunbooks(typeof args.limit === "number" ? args.limit : 50),
+      execute: async (args, context) => engine.listRunbooks(typeof args.limit === "number" ? args.limit : 50, context.tenantId),
     },
   ];
 }
