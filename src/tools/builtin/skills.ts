@@ -88,16 +88,19 @@ export function createSkillTools(skills: SkillStore, engineer: EngineerLoopEngin
         required: ["name", "category", "description", "body"],
         additionalProperties: false,
       },
-      execute: async (args, context) => skills.create({
-        tenantId: context.tenantId,
-        name: requiredString(args, "name"),
-        category: requiredString(args, "category"),
-        description: requiredString(args, "description"),
-        body: requiredString(args, "body"),
-        ...(optionalStringArray(args, "tags") ? { tags: optionalStringArray(args, "tags") } : {}),
-        source: "agent",
-        verified: false,
-      }),
+      execute: async (args, context) => {
+        const tags = optionalStringArray(args, "tags");
+        return skills.create({
+          tenantId: context.tenantId,
+          name: requiredString(args, "name"),
+          category: requiredString(args, "category"),
+          description: requiredString(args, "description"),
+          body: requiredString(args, "body"),
+          ...(tags !== undefined ? { tags } : {}),
+          source: "agent",
+          verified: false,
+        });
+      },
     },
     {
       name: "skill_update",
@@ -116,15 +119,21 @@ export function createSkillTools(skills: SkillStore, engineer: EngineerLoopEngin
         required: ["name", "expectedRevision"],
         additionalProperties: false,
       },
-      execute: async (args, context) => skills.update({
-        tenantId: context.tenantId,
-        name: requiredString(args, "name"),
-        expectedRevision: requiredString(args, "expectedRevision"),
-        ...(optionalString(args, "category") ? { category: optionalString(args, "category") } : {}),
-        ...(optionalString(args, "description") ? { description: optionalString(args, "description") } : {}),
-        ...(optionalString(args, "body") ? { body: optionalString(args, "body") } : {}),
-        ...(optionalStringArray(args, "tags") ? { tags: optionalStringArray(args, "tags") } : {}),
-      }),
+      execute: async (args, context) => {
+        const category = optionalString(args, "category");
+        const description = optionalString(args, "description");
+        const body = optionalString(args, "body");
+        const tags = optionalStringArray(args, "tags");
+        return skills.update({
+          tenantId: context.tenantId,
+          name: requiredString(args, "name"),
+          expectedRevision: requiredString(args, "expectedRevision"),
+          ...(category !== undefined ? { category } : {}),
+          ...(description !== undefined ? { description } : {}),
+          ...(body !== undefined ? { body } : {}),
+          ...(tags !== undefined ? { tags } : {}),
+        });
+      },
     },
     {
       name: "skill_promote_runbook",
@@ -147,14 +156,17 @@ export function createSkillTools(skills: SkillStore, engineer: EngineerLoopEngin
         const runbookId = requiredString(args, "runbookId");
         const runbook = (await engineer.listRunbooks(500, context.tenantId)).find((item) => item.id === runbookId);
         if (!runbook) throw new Error(`Engineer runbook not found: ${runbookId}`);
+        const category = optionalString(args, "category");
+        const tags = optionalStringArray(args, "tags");
+        const whenToUse = optionalStringArray(args, "whenToUse");
         return skills.promoteRunbook({
           tenantId: context.tenantId,
           runbook,
           name: requiredString(args, "name"),
           description: requiredString(args, "description"),
-          ...(optionalString(args, "category") ? { category: optionalString(args, "category") } : {}),
-          ...(optionalStringArray(args, "tags") ? { tags: optionalStringArray(args, "tags") } : {}),
-          ...(optionalStringArray(args, "whenToUse") ? { whenToUse: optionalStringArray(args, "whenToUse") } : {}),
+          ...(category !== undefined ? { category } : {}),
+          ...(tags !== undefined ? { tags } : {}),
+          ...(whenToUse !== undefined ? { whenToUse } : {}),
         });
       },
     },
