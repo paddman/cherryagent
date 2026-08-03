@@ -46,3 +46,38 @@ test("allowlist policy blocks unknown senders without issuing a code", async (co
   assert.equal(blocked.decision, "block");
   assert.equal(blocked.code, undefined);
 });
+
+test("approval racing with evaluation cannot recreate a pairing request", async (context) => {
+  const directory = await mkdtemp(join(tmpdir(), "cherry-channel-race-"));
+  context.after(async () => rm(directory, { recursive: true, force: true }));
+  const store = new ChannelAccessStore({
+    file: join(directory, "access.json"),
+    defaultPolicy: "pairing",
+  });
+
+  const pending = await store.evaluate({ channel: "line", senderId: "user-race" });
+  assert.ok(pending.code);
+
+  const [, evaluated] = await Promise.all([
+    store.approve({ channel: "line", code: pending.code }),
+    store.evaluate({ channel: "line", senderId: "user-race" }),
+  ]);
+  assert.equal(evaluated.decision, "allow");
+  assert.equal((await store.list("line"))[0]?.pending.length, 0);
+});
+
+test("new environment allowlist seeds remain effective after state already exists", async (context) => {
+  const directory = await mkdtemp(join(tmpdir(), "cherry-channel-seed-"));
+  context.after(async () => rm(directory, { recursive: true, force: true }));
+  const file = join(directory, "access.json");
+
+  const firstStore = new ChannelAccessStore({ file, defaultPolicy: "pairing" });
+  await firstStore.evaluate({ channel: "line", senderId: "pending-user" });
+
+  const restartedStore = new ChannelAccessStore({
+    file,
+    defaultPolicy: "pairing",
+    seedAllowFrom: ["new-admin"],
+  });
+  assert.equal((await restartedStore.evaluate({ channel: "line", senderId: "new-admin" })).decision, "allow");
+});
