@@ -25,6 +25,8 @@ CHERRY_LLM_MODEL=qwen3.6-27b
 CHERRY_LLM_TIMEOUT_MS=60000
 ```
 
+The timeout covers connection setup, response headers, and the complete response body. A provider that sends headers and then stalls cannot hold an agent step indefinitely.
+
 ### Multiple profiles
 
 Set one JSON array on a single line:
@@ -92,7 +94,9 @@ Engineer Loop
   → verified SKILL.md with provenance
 ```
 
-A free-form skill created from explicit user instructions is marked `verified: false`. A promoted runbook is marked `verified: true` and records both the Engineer Loop and Runbook IDs.
+A free-form skill created from explicit user instructions is marked `verified: false`. Creating or updating free-form persistent procedural memory is classified as `external`, so it enters the Approval Inbox under the recommended policy. This prevents an untrusted email, webpage, or document from silently converting prompt injection into durable agent behavior.
+
+A promoted runbook is marked `verified: true`, records both the Engineer Loop and Runbook IDs, and remains a `write` action because it comes from CherryAgent's evidence-gated learning path.
 
 ### Write safety
 
@@ -150,13 +154,21 @@ Approval, revocation, and policy changes are `dangerous` tools and therefore ent
 - LLM profile cooldown and availability
 - workspace and skill storage access
 - POSIX permissions on `.env` and authentication state
-- optional Python AI worker health
+- optional authenticated Python AI worker health
 
 A report contains `pass`, `warn`, and `fail` checks with evidence and remediation.
 
 ## 5. Python AI worker
 
 The Python worker is stateless. TypeScript remains the owner of authentication, tenants, approvals, audit, planning, and final completion decisions.
+
+Generate one shared worker token before starting either service:
+
+```bash
+export CHERRY_AI_WORKER_TOKEN="$(openssl rand -hex 32)"
+```
+
+The token must contain at least 24 printable characters. Every worker endpoint, including health, requires `Authorization: Bearer <token>`.
 
 Start locally:
 
@@ -168,18 +180,22 @@ python -m pip install -e ".[dev]"
 uvicorn app.main:app --host 127.0.0.1 --port 8790
 ```
 
-Or build the container:
+Or build the non-root container:
 
 ```bash
 docker build -t cherry-ai-worker services/cherry-ai-worker
-docker run --rm -p 127.0.0.1:8790:8790 cherry-ai-worker
+docker run --rm \
+  -e CHERRY_AI_WORKER_TOKEN="$CHERRY_AI_WORKER_TOKEN" \
+  -p 127.0.0.1:8790:8790 \
+  cherry-ai-worker
 ```
 
-Enable the TypeScript connector:
+Enable the TypeScript connector with the same token:
 
 ```env
 CHERRY_AI_WORKER_ENABLED=true
 CHERRY_AI_WORKER_BASE_URL=http://127.0.0.1:8790
+CHERRY_AI_WORKER_TOKEN=replace-with-at-least-24-random-characters
 CHERRY_AI_WORKER_TIMEOUT_MS=60000
 ```
 
@@ -201,7 +217,7 @@ CHERRY_AI_EMBEDDING_MODEL=qwen3-embedding-8b
 CHERRY_AI_EMBEDDING_TIMEOUT_SECONDS=60
 ```
 
-Text-bearing AI worker tools are marked `external` because the worker URL may point outside the local machine. This keeps sensitive documents behind explicit approval unless deployment policy deliberately changes.
+Text-bearing AI worker tools are marked `external` because the worker URL may point outside the local machine. This keeps sensitive documents behind explicit approval unless deployment policy deliberately changes. Bearer authentication prevents an exposed worker from becoming a free proxy to the configured embedding provider.
 
 ## 6. Verification
 
@@ -209,6 +225,7 @@ TypeScript:
 
 ```bash
 npm ci
+npm audit --omit=dev --audit-level=high
 npm run typecheck
 npm test
 npm run build
