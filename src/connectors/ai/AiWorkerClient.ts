@@ -1,5 +1,6 @@
 export type AiWorkerClientOptions = {
   baseUrl: string;
+  token: string;
   timeoutMs: number;
 };
 
@@ -7,6 +8,7 @@ export type AiWorkerHealth = {
   ok: boolean;
   service: string;
   version: string;
+  authentication: "bearer";
   embeddingConfigured: boolean;
   capabilities: string[];
 };
@@ -26,11 +28,16 @@ export type AiRerankItem = {
 
 export class AiWorkerClient {
   readonly #baseUrl: string;
+  readonly #token: string;
   readonly #timeoutMs: number;
 
   constructor(options: AiWorkerClientOptions) {
     this.#baseUrl = options.baseUrl.replace(/\/$/, "");
+    this.#token = options.token.trim();
     this.#timeoutMs = Math.max(1_000, options.timeoutMs);
+    if (!this.#token || this.#token.length < 24 || /[\u0000-\u001f\u007f]/.test(this.#token)) {
+      throw new Error("CHERRY_AI_WORKER_TOKEN must contain at least 24 printable characters when the AI worker is enabled");
+    }
   }
 
   async health(): Promise<AiWorkerHealth> {
@@ -59,7 +66,10 @@ export class AiWorkerClient {
     try {
       const response = await fetch(`${this.#baseUrl}${path}`, {
         method,
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${this.#token}`,
+        },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
         signal: controller.signal,
       });
