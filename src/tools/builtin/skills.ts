@@ -74,8 +74,8 @@ export function createSkillTools(skills: SkillStore, engineer: EngineerLoopEngin
     },
     {
       name: "skill_create",
-      description: "Create one tenant-scoped agentskills-style SKILL.md from explicit user requirements or a procedure that has already been proven. New free-form skills are marked unverified until evidence exists.",
-      risk: "write",
+      description: "Create one tenant-scoped agentskills-style SKILL.md from explicit user requirements. Free-form procedural memory is unverified and approval-gated to prevent prompt injection from becoming persistent behavior.",
+      risk: "external",
       parameters: {
         type: "object",
         properties: {
@@ -104,8 +104,8 @@ export function createSkillTools(skills: SkillStore, engineer: EngineerLoopEngin
     },
     {
       name: "skill_update",
-      description: "Update an existing skill only after reading its current revision. Provenance and verification status cannot be forged by this tool.",
-      risk: "write",
+      description: "Update an existing skill only after reading its current revision. Changes to persistent procedural memory require approval; provenance and verification status cannot be forged.",
+      risk: "external",
       parameters: {
         type: "object",
         properties: {
@@ -137,7 +137,7 @@ export function createSkillTools(skills: SkillStore, engineer: EngineerLoopEngin
     },
     {
       name: "skill_promote_runbook",
-      description: "Promote a successfully verified Engineer Loop runbook into a reusable procedural skill. This is the trusted learning path because verification evidence and provenance are preserved.",
+      description: "Promote a successfully verified Engineer Loop runbook into a reusable procedural skill. This trusted learning path preserves verification evidence and provenance.",
       risk: "write",
       parameters: {
         type: "object",
