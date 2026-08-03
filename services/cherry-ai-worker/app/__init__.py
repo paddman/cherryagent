@@ -1,0 +1,1 @@
+"""CherryAgent stateless AI worker."""
