@@ -132,6 +132,7 @@ export class OpenAICompatibleProvider implements LlmProvider {
     }
 
     const text = await response.text();
+    const retryDelay = retryAfterMs(response);
     let payload: ApiResponse;
     try {
       payload = JSON.parse(text) as ApiResponse;
@@ -140,7 +141,7 @@ export class OpenAICompatibleProvider implements LlmProvider {
         `LLM returned non-JSON response (${response.status}): ${safePreview(text)}`,
         {
           status: response.status,
-          retryAfterMs: retryAfterMs(response),
+          ...(retryDelay !== undefined ? { retryAfterMs: retryDelay } : {}),
           responsePreview: safePreview(text),
           cause: error,
         },
@@ -151,7 +152,7 @@ export class OpenAICompatibleProvider implements LlmProvider {
       const message = payload.error?.message?.trim() || `LLM request failed with HTTP ${response.status}`;
       throw new OpenAICompatibleProviderError(message, {
         status: response.status,
-        retryAfterMs: retryAfterMs(response),
+        ...(retryDelay !== undefined ? { retryAfterMs: retryDelay } : {}),
         responsePreview: safePreview(text),
       });
     }
