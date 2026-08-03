@@ -95,6 +95,16 @@ function publicSnapshot(channel: string, state: StoredChannelAccess, now = Date.
   };
 }
 
+function decisionForKnownState(state: StoredChannelAccess, senderId: string): ChannelAccessDecision | undefined {
+  if (state.policy === "disabled") return { decision: "block", reason: "channel policy is disabled" };
+  if (state.policy === "open") return { decision: "allow", reason: "channel policy is open" };
+  if (state.allowFrom.includes("*") || state.allowFrom.includes(senderId)) {
+    return { decision: "allow", reason: "sender is allowlisted" };
+  }
+  if (state.policy === "allowlist") return { decision: "block", reason: "sender is not allowlisted" };
+  return undefined;
+}
+
 export class ChannelAccessStore {
   readonly #file: string;
   readonly #defaultPolicy: ChannelAccessPolicy;
@@ -116,16 +126,16 @@ export class ChannelAccessStore {
     const state = this.#state(data, channel);
     this.#prunePending(state);
 
-    if (state.policy === "disabled") return { decision: "block", reason: "channel policy is disabled" };
-    if (state.policy === "open") return { decision: "allow", reason: "channel policy is open" };
-    if (state.allowFrom.includes("*") || state.allowFrom.includes(senderId)) {
-      return { decision: "allow", reason: "sender is allowlisted" };
-    }
-    if (state.policy === "allowlist") return { decision: "block", reason: "sender is not allowlisted" };
+    const immediate = decisionForKnownState(state, senderId);
+    if (immediate) return immediate;
 
     return await this.#mutate((mutable) => {
       const mutableState = this.#state(mutable, channel);
       this.#prunePending(mutableState);
+
+      const current = decisionForKnownState(mutableState, senderId);
+      if (current) return current;
+
       const existing = mutableState.pending.find((item) => item.senderId === senderId);
       if (existing) {
         return {
@@ -234,9 +244,12 @@ export class ChannelAccessStore {
           if (!rawState || typeof rawState !== "object" || Array.isArray(rawState)) continue;
           const state = rawState as Partial<StoredChannelAccess>;
           const channel = normalizeChannel(rawChannel);
+          const storedAllowFrom = Array.isArray(state.allowFrom)
+            ? state.allowFrom.filter((item): item is string => typeof item === "string")
+            : [];
           channels[channel] = {
             policy: isPolicy(state.policy) ? state.policy : this.#defaultPolicy,
-            allowFrom: normalizeAllowFrom(Array.isArray(state.allowFrom) ? state.allowFrom.filter((item): item is string => typeof item === "string") : this.#seedAllowFrom),
+            allowFrom: normalizeAllowFrom([...this.#seedAllowFrom, ...storedAllowFrom]),
             pending: Array.isArray(state.pending)
               ? state.pending.filter((item): item is PendingPairing => Boolean(
                   item && typeof item === "object"
@@ -295,7 +308,9 @@ export class ChannelAccessStore {
   }
 
   async #write(data: ChannelAccessData): Promise<void> {
-    await mkdir(dirname(this.#file), { recursive: true, mode: 0o700 });
+    const directory = dirname(this.#file);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    if (process.platform !== "win32") await chmod(directory, 0o700);
     const temporary = `${this.#file}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(temporary, `${JSON.stringify(data, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
     await chmod(temporary, 0o600);
