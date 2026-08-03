@@ -1,5 +1,6 @@
+import { constants as fsConstants } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, open, readdir, rename, writeFile } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 import type { EngineerRunbook } from "../engineer/EngineerLoopEngine.js";
 import { DEFAULT_TENANT_ID } from "../tenancy/constants.js";
@@ -69,7 +70,7 @@ function cleanBody(value: string): string {
   if (Buffer.byteLength(body, "utf8") > MAX_SKILL_BYTES) {
     throw new Error(`skill body exceeds ${MAX_SKILL_BYTES} bytes`);
   }
-  return `${body}\n`;
+  return body;
 }
 
 function cleanTags(values: readonly string[] | undefined): string[] {
@@ -77,6 +78,10 @@ function cleanTags(values: readonly string[] | undefined): string[] {
     .map((value) => value.replace(/\s+/g, " ").trim())
     .filter((value) => value && value.length <= 40))]
     .slice(0, 12);
+}
+
+function sameTags(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function decodeScalar(value: string): unknown {
@@ -209,25 +214,38 @@ export class SkillStore {
     tags?: string[];
   }): Promise<SkillRecord> {
     const tenantId = tenantSegment(input.tenantId);
+    if (input.description === undefined && input.body === undefined && input.tags === undefined) {
+      throw new Error("At least one of description, body, or tags is required");
+    }
+
     return await this.#mutate(async () => {
       const current = await this.read(input.name, input.category, tenantId);
       if (current.revision !== input.expectedRevision.trim()) {
         throw new Error("Skill changed after it was read; read it again before updating");
       }
+
+      const requestedDescription = input.description === undefined ? current.description : cleanDescription(input.description);
+      const requestedBody = input.body === undefined ? current.body : cleanBody(input.body);
+      const requestedTags = input.tags === undefined ? current.tags : cleanTags(input.tags);
+      const changed = requestedDescription !== current.description
+        || requestedBody !== current.body
+        || !sameTags(requestedTags, current.tags);
+      if (!changed) throw new Error("Skill update does not change the current content");
+
       const metadata: SkillMetadata = {
         name: current.name,
         category: current.category,
-        description: input.description === undefined ? current.description : cleanDescription(input.description),
+        description: requestedDescription,
         version: current.version,
         author: current.author,
-        tags: input.tags === undefined ? current.tags : cleanTags(input.tags),
+        tags: requestedTags.filter((tag) => tag.toLowerCase() !== "verified"),
         source: current.source,
-        verified: current.verified,
+        verified: false,
         createdAt: current.createdAt,
         updatedAt: nowIso(),
         ...(current.runbookId ? { runbookId: current.runbookId } : {}),
       };
-      const content = renderDocument(metadata, input.body === undefined ? current.body : cleanBody(input.body));
+      const content = renderDocument(metadata, requestedBody);
       await this.#atomicWrite(current.path, content);
       return this.#parseRecord(tenantId, current.path, content);
     });
@@ -292,7 +310,7 @@ export class SkillStore {
     if (categoryInput) {
       const category = skillSegment(categoryInput, "category");
       const target = this.#skillPath(tenantId, category, name);
-      const content = await readFile(target, "utf8");
+      const content = await this.#readSkillFile(target);
       return this.#parseRecord(tenantId, target, content);
     }
 
@@ -301,7 +319,7 @@ export class SkillStore {
     if (matches.length > 1) throw new Error(`Skill name is ambiguous; provide category for ${name}`);
     const selected = matches[0];
     if (!selected) throw new Error(`Skill not found: ${name}`);
-    const content = await readFile(selected.path, "utf8");
+    const content = await this.#readSkillFile(selected.path);
     return this.#parseRecord(tenantId, selected.path, content);
   }
 
@@ -332,7 +350,7 @@ export class SkillStore {
 
     const output: SkillSummary[] = [];
     for (const path of files) {
-      const content = await readFile(path, "utf8");
+      const content = await this.#readSkillFile(path);
       output.push(summarize(this.#parseRecord(tenantId, path, content)));
     }
     return output.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
@@ -400,10 +418,38 @@ export class SkillStore {
       current = resolve(current, part);
       try {
         const info = await lstat(current);
-        if (info.isSymbolicLink()) throw new Error(`Refusing skill write through symlink: ${current}`);
+        if (info.isSymbolicLink()) throw new Error(`Refusing skill access through symlink: ${current}`);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
+    }
+  }
+
+  async #readSkillFile(path: string): Promise<string> {
+    const target = this.#assertInsideRoot(path);
+    await this.#assertNoSymlinkParents(target);
+    const entry = await lstat(target);
+    if (entry.isSymbolicLink()) throw new Error(`Refusing skill read through symlink: ${target}`);
+    if (!entry.isFile()) throw new Error(`Skill path is not a regular file: ${target}`);
+    if (entry.size > MAX_SKILL_BYTES + 16_000) throw new Error(`Skill file is too large: ${target}`);
+
+    const flags = fsConstants.O_RDONLY | (process.platform === "win32" ? 0 : fsConstants.O_NOFOLLOW);
+    let handle;
+    try {
+      handle = await open(target, flags);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ELOOP") {
+        throw new Error(`Refusing skill read through symlink: ${target}`);
+      }
+      throw error;
+    }
+    try {
+      const info = await handle.stat();
+      if (!info.isFile()) throw new Error(`Skill path is not a regular file: ${target}`);
+      if (info.size > MAX_SKILL_BYTES + 16_000) throw new Error(`Skill file is too large: ${target}`);
+      return await handle.readFile("utf8");
+    } finally {
+      await handle.close();
     }
   }
 
@@ -412,6 +458,7 @@ export class SkillStore {
     await this.#assertNoSymlinkParents(path);
     const parent = resolve(path, "..");
     await mkdir(parent, { recursive: true, mode: 0o700 });
+    if (process.platform !== "win32") await chmod(parent, 0o700);
     await this.#assertNoSymlinkParents(path);
     const temporary = resolve(parent, `.SKILL.${process.pid}.${randomUUID()}.tmp`);
     await writeFile(temporary, content, { encoding: "utf8", mode: 0o600 });
