@@ -231,9 +231,11 @@ async def embeddings(request: EmbeddingRequest) -> dict[str, Any]:
     if not base_url:
         raise HTTPException(status_code=503, detail="CHERRY_AI_EMBEDDING_BASE_URL is not configured")
     api_key = os.getenv("CHERRY_AI_EMBEDDING_API_KEY", "local")
-    model = request.model or os.getenv("CHERRY_AI_EMBEDDING_MODEL", "").strip()
+    model = os.getenv("CHERRY_AI_EMBEDDING_MODEL", "").strip()
     if not model:
         raise HTTPException(status_code=503, detail="CHERRY_AI_EMBEDDING_MODEL is not configured")
+    if request.model and request.model != model:
+        raise HTTPException(status_code=400, detail="Embedding model override is disabled")
     try:
         timeout_seconds = max(1.0, float(os.getenv("CHERRY_AI_EMBEDDING_TIMEOUT_SECONDS", "60")))
     except ValueError as exc:
@@ -254,7 +256,8 @@ async def embeddings(request: EmbeddingRequest) -> dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=502, detail=f"Embedding provider returned non-JSON HTTP {response.status_code}") from exc
     if response.is_error:
-        detail = payload.get("error", {}).get("message") if isinstance(payload, dict) else None
+        error_payload = payload.get("error") if isinstance(payload, dict) else None
+        detail = error_payload.get("message") if isinstance(error_payload, dict) else None
         raise HTTPException(status_code=response.status_code, detail=detail or "Embedding provider returned an error")
     if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
         raise HTTPException(status_code=502, detail="Embedding provider response is missing data")
