@@ -200,6 +200,11 @@ export class ChannelAccessStore {
   async revoke(channelInput: string, senderInput: string): Promise<ChannelAccessSnapshot> {
     const channel = normalizeChannel(channelInput);
     const senderId = normalizeSender(senderInput);
+    if (this.#seedAllowFrom.includes("*") || this.#seedAllowFrom.includes(senderId)) {
+      throw new Error(
+        `Sender ${senderId} is configured by CHERRY_CHANNEL_ALLOW_FROM; remove it from the environment and restart CherryAgent before revoking it`,
+      );
+    }
     return await this.#mutate((data) => {
       const state = this.#state(data, channel);
       state.allowFrom = state.allowFrom.filter((item) => item !== senderId);
