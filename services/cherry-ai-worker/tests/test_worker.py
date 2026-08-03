@@ -1,4 +1,8 @@
-from app.main import chunk_text, lexical_score, rerank_documents
+from fastapi.testclient import TestClient
+
+from app.main import app, chunk_text, lexical_score, rerank_documents
+
+WORKER_TOKEN = "test-worker-token-0123456789abcdef"
 
 
 def test_chunk_text_respects_limits_and_overlap() -> None:
@@ -27,3 +31,17 @@ def test_lexical_score_is_deterministic() -> None:
     second = lexical_score("model fallback", "model fallback with bounded retries")
     assert first == second
     assert 0 < first <= 1
+
+
+def test_worker_rejects_missing_and_invalid_tokens(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.delenv("CHERRY_AI_WORKER_TOKEN", raising=False)
+    assert client.get("/health").status_code == 503
+
+    monkeypatch.setenv("CHERRY_AI_WORKER_TOKEN", WORKER_TOKEN)
+    assert client.get("/health").status_code == 401
+    assert client.get("/health", headers={"authorization": "Bearer wrong-token"}).status_code == 401
+
+    response = client.get("/health", headers={"authorization": f"Bearer {WORKER_TOKEN}"})
+    assert response.status_code == 200
+    assert response.json()["authentication"] == "bearer"
