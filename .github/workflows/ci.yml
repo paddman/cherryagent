@@ -15,9 +15,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Generate patched production dependency lock
+      - name: Inspect and generate patched production dependency lock
         run: |
-          npm audit fix --package-lock-only
+          npm ls brace-expansion || true
+          npm view brace-expansion@1.1.17 version dist.integrity dist.tarball --json || true
+          npm view brace-expansion@2.1.3 version dist.integrity dist.tarball --json || true
+          npm audit fix --force --package-lock-only || true
           git diff -- package-lock.json
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
