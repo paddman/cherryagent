@@ -8,6 +8,7 @@
     "dev": "tsx src/index.ts",
     "server": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/llm/OpenAICompatibleProvider.test.ts src/llm/ResilientLlmProvider.test.ts src/channels/ChannelAccessStore.test.ts src/skills/SkillStore.test.ts src/tools/ToolRouter.test.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "tauri": "tauri",
@@ -37,6 +38,12 @@
   "overrides": {
     "exceljs": {
       "uuid": "^11.1.1"
+    },
+    "minimatch@3.1.5": {
+      "brace-expansion": "1.1.17"
+    },
+    "minimatch@5.1.9": {
+      "brace-expansion": "2.1.4"
     }
   }
 }

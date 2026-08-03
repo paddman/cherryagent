@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import type { ChannelAccessPolicy } from "./channels/ChannelAccessStore.js";
 import type { RiskLevel } from "./core/types.js";
+import type { ResilientLlmProfile } from "./llm/ResilientLlmProvider.js";
 
 function loadDotEnv(path = ".env"): void {
   const absolute = resolve(path);
@@ -43,6 +45,58 @@ function booleanEnv(name: string, fallback: boolean): boolean {
   return fallback;
 }
 
+function commaSeparatedEnv(name: string): string[] {
+  return [...new Set((process.env[name] ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean))];
+}
+
+function channelPolicyEnv(name: string, fallback: ChannelAccessPolicy): ChannelAccessPolicy {
+  const value = optionalEnv(name);
+  return value === "pairing" || value === "allowlist" || value === "open" || value === "disabled"
+    ? value
+    : fallback;
+}
+
+function parseLlmProfiles(defaults: {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  timeoutMs: number;
+}): ResilientLlmProfile[] {
+  const raw = optionalEnv("CHERRY_LLM_PROFILES_JSON");
+  if (!raw) return [{ id: "primary", ...defaults }];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch (error) {
+    throw new Error(`CHERRY_LLM_PROFILES_JSON is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!Array.isArray(parsed) || !parsed.length) {
+    throw new Error("CHERRY_LLM_PROFILES_JSON must be a non-empty JSON array");
+  }
+
+  return parsed.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error(`LLM profile at index ${index} must be an object`);
+    }
+    const input = item as Record<string, unknown>;
+    const id = typeof input.id === "string" && input.id.trim() ? input.id.trim() : `profile-${index + 1}`;
+    const baseUrl = typeof input.baseUrl === "string" && input.baseUrl.trim() ? input.baseUrl.trim().replace(/\/$/, "") : "";
+    const model = typeof input.model === "string" && input.model.trim() ? input.model.trim() : "";
+    const apiKey = typeof input.apiKey === "string" ? input.apiKey : defaults.apiKey;
+    const timeoutMs = input.timeoutMs === undefined ? defaults.timeoutMs : Number(input.timeoutMs);
+    if (!baseUrl) throw new Error(`LLM profile ${id} is missing baseUrl`);
+    if (!model) throw new Error(`LLM profile ${id} is missing model`);
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 1_000 || timeoutMs > 15 * 60_000) {
+      throw new Error(`LLM profile ${id} timeoutMs must be between 1000 and 900000`);
+    }
+    return { id, baseUrl, apiKey, model, timeoutMs: Math.round(timeoutMs) };
+  });
+}
+
 const knownRisks = new Set<RiskLevel>(["safe", "write", "external", "dangerous"]);
 const autoApprove = new Set<RiskLevel>(
   (process.env.CHERRY_AUTO_APPROVE ?? "safe,write")
@@ -50,6 +104,12 @@ const autoApprove = new Set<RiskLevel>(
     .map((item) => item.trim())
     .filter((item): item is RiskLevel => knownRisks.has(item as RiskLevel)),
 );
+
+const llmBaseUrl = (process.env.CHERRY_LLM_BASE_URL ?? "http://127.0.0.1:8000/v1").replace(/\/$/, "");
+const llmApiKey = process.env.CHERRY_LLM_API_KEY ?? "local";
+const llmModel = process.env.CHERRY_LLM_MODEL ?? "qwen3.6-27b";
+const llmTimeoutMs = Math.min(15 * 60_000, Math.max(1_000, integerEnv("CHERRY_LLM_TIMEOUT_MS", 60_000)));
+const llmProfiles = parseLlmProfiles({ baseUrl: llmBaseUrl, apiKey: llmApiKey, model: llmModel, timeoutMs: llmTimeoutMs });
 
 const googleAccessToken = optionalEnv("CHERRY_GOOGLE_ACCESS_TOKEN");
 const googleClientId = optionalEnv("CHERRY_GOOGLE_CLIENT_ID");
@@ -74,9 +134,11 @@ const lineChannelAccessToken = optionalEnv("CHERRY_LINE_CHANNEL_ACCESS_TOKEN")
 
 export const config = {
   llm: {
-    baseUrl: (process.env.CHERRY_LLM_BASE_URL ?? "http://127.0.0.1:8000/v1").replace(/\/$/, ""),
-    apiKey: process.env.CHERRY_LLM_API_KEY ?? "local",
-    model: process.env.CHERRY_LLM_MODEL ?? "qwen3.6-27b",
+    baseUrl: llmBaseUrl,
+    apiKey: llmApiKey,
+    model: llmModel,
+    timeoutMs: llmTimeoutMs,
+    profiles: llmProfiles,
   },
   agent: {
     maxSteps: integerEnv("CHERRY_MAX_STEPS", 24),
@@ -112,6 +174,20 @@ export const config = {
       channelAccessToken: lineChannelAccessToken,
       configured: Boolean(lineChannelSecret && lineChannelAccessToken),
     },
+  },
+  channelAccess: {
+    file: resolve(process.env.CHERRY_CHANNEL_ACCESS_FILE ?? ".cherry/channel-access.json"),
+    defaultPolicy: channelPolicyEnv("CHERRY_CHANNEL_DEFAULT_POLICY", "pairing"),
+    allowFrom: commaSeparatedEnv("CHERRY_CHANNEL_ALLOW_FROM"),
+    pairingTtlMs: Math.min(24 * 60, Math.max(1, integerEnv("CHERRY_CHANNEL_PAIRING_TTL_MINUTES", 10))) * 60_000,
+  },
+  skills: {
+    root: resolve(process.env.CHERRY_SKILLS_ROOT ?? ".cherry/skills"),
+  },
+  aiWorker: {
+    enabled: booleanEnv("CHERRY_AI_WORKER_ENABLED", false),
+    baseUrl: (process.env.CHERRY_AI_WORKER_BASE_URL ?? "http://127.0.0.1:8790").replace(/\/$/, ""),
+    timeoutMs: Math.min(5 * 60_000, Math.max(1_000, integerEnv("CHERRY_AI_WORKER_TIMEOUT_MS", 60_000))),
   },
   infra: {
     timeoutMs: Math.max(1_000, integerEnv("CHERRY_INFRA_TIMEOUT_MS", 20_000)),

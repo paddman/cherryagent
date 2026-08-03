@@ -4,6 +4,7 @@ import { AgentHandoffProtocol } from "./agentic/AgentHandoffProtocol.js";
 import { AgentOrchestrator } from "./agentic/AgentOrchestrator.js";
 import { AgenticStateStore } from "./agentic/AgenticStateStore.js";
 import { SharedEvidenceBus } from "./agentic/SharedEvidenceBus.js";
+import { ChannelAccessStore } from "./channels/ChannelAccessStore.js";
 import { ChannelGateway } from "./channels/ChannelGateway.js";
 import { LineAdapter } from "./channels/line/LineAdapter.js";
 import type { ChannelAdapterStatus } from "./channels/types.js";
@@ -11,6 +12,7 @@ import { ChatLogStore } from "./chat/ChatLogStore.js";
 import { CognitiveEngine } from "./cognition/CognitiveEngine.js";
 import { CognitiveStore } from "./cognition/CognitiveStore.js";
 import { config } from "./config.js";
+import { AiWorkerClient } from "./connectors/ai/AiWorkerClient.js";
 import { DatabaseCliHub } from "./connectors/database/DatabaseCliHub.js";
 import { BidPilotEngine } from "./connectors/documents/BidPilotEngine.js";
 import { bidPilotConfig } from "./connectors/documents/config.js";
@@ -20,24 +22,24 @@ import { MarketIntelligenceClient } from "./connectors/market/MarketIntelligence
 import { ProxmoxClient } from "./connectors/proxmox/ProxmoxClient.js";
 import { CryptoExchangeHub } from "./connectors/trading/CryptoExchangeHub.js";
 import { VsphereClient } from "./connectors/vsphere/VsphereClient.js";
+import { SystemDoctor } from "./doctor/SystemDoctor.js";
 import { EngineerLoopEngine } from "./engineer/EngineerLoopEngine.js";
 import { getLinuxRuntimeProfiles, initializeLinuxRuntime } from "./linuxRuntime.js";
-import { OpenAICompatibleProvider } from "./llm/OpenAICompatibleProvider.js";
+import { ResilientLlmProvider } from "./llm/ResilientLlmProvider.js";
 import { MemoryStore } from "./memory/MemoryStore.js";
 import { NotificationDispatcher } from "./planner/NotificationDispatcher.js";
 import { PlannerStore } from "./planner/PlannerStore.js";
 import { SchedulerEngine } from "./planner/SchedulerEngine.js";
 import { ApprovalGate } from "./safety/ApprovalGate.js";
+import { SkillStore } from "./skills/SkillStore.js";
 import { ToolRegistry } from "./tools/ToolRegistry.js";
-import { UsageStore } from "./usage/UsageStore.js";
-import { OfficeInboxStore } from "./office/OfficeInboxStore.js";
-import { OfficeInboxService } from "./office/OfficeInboxService.js";
-import { ReportStore } from "./reports/ReportStore.js";
-import { ReportStudioService } from "./reports/ReportStudioService.js";
 import { createAgenticTools } from "./tools/builtin/agentic.js";
+import { createAiWorkerTools } from "./tools/builtin/aiWorker.js";
 import { createBidPilotTools } from "./tools/builtin/bidpilot.js";
+import { createChannelAccessTools } from "./tools/builtin/channelAccess.js";
 import { createCognitionTools } from "./tools/builtin/cognition.js";
 import { createDatabaseTools } from "./tools/builtin/database.js";
+import { createDoctorTools } from "./tools/builtin/doctor.js";
 import { createEngineerTools } from "./tools/builtin/engineer.js";
 import { fileTools } from "./tools/builtin/files.js";
 import { createGoogleWorkspaceTools } from "./tools/builtin/googleWorkspace.js";
@@ -46,7 +48,13 @@ import { createMarketTools } from "./tools/builtin/markets.js";
 import { createOfficeTools } from "./tools/builtin/office.js";
 import { createPlannerTools } from "./tools/builtin/planner.js";
 import { createReportTools } from "./tools/builtin/reports.js";
+import { createSkillTools } from "./tools/builtin/skills.js";
 import { systemTools } from "./tools/builtin/system.js";
+import { UsageStore } from "./usage/UsageStore.js";
+import { OfficeInboxStore } from "./office/OfficeInboxStore.js";
+import { OfficeInboxService } from "./office/OfficeInboxService.js";
+import { ReportStore } from "./reports/ReportStore.js";
+import { ReportStudioService } from "./reports/ReportStudioService.js";
 
 export type RuntimeConnectors = {
   google: boolean;
@@ -106,6 +114,7 @@ export async function createRuntime(): Promise<{
   connectors: RuntimeConnectors;
 }> {
   await mkdir(config.workspaceRoot, { recursive: true });
+  await mkdir(config.skills.root, { recursive: true, mode: 0o700 });
   await initializeLinuxRuntime();
 
   const approvalGate = new ApprovalGate(config.agent.autoApprove);
@@ -115,6 +124,18 @@ export async function createRuntime(): Promise<{
   const memory = new MemoryStore(config.memoryFile);
   const planner = new PlannerStore(config.plannerFile);
   const engineer = new EngineerLoopEngine(config.engineerFile);
+  const skills = new SkillStore(config.skills.root);
+  const channelAccess = new ChannelAccessStore({
+    file: config.channelAccess.file,
+    defaultPolicy: config.channelAccess.defaultPolicy,
+    seedAllowFrom: config.channelAccess.allowFrom,
+    pairingTtlMs: config.channelAccess.pairingTtlMs,
+  });
+  const provider = new ResilientLlmProvider(config.llm.profiles);
+  const aiWorker = config.aiWorker.enabled
+    ? new AiWorkerClient({ baseUrl: config.aiWorker.baseUrl, timeoutMs: config.aiWorker.timeoutMs })
+    : undefined;
+
   const agenticStore = new AgenticStateStore(config.agentic.file);
   await agenticStore.recoverInterruptedRuns();
   const cognitionStore = new CognitiveStore(config.cognition.file);
@@ -131,7 +152,6 @@ export async function createRuntime(): Promise<{
   });
   const google = new GoogleWorkspaceClient(googleAuth);
   const officeInbox = new OfficeInboxService(new OfficeInboxStore(config.officeInboxFile), google, planner);
-  const provider = new OpenAICompatibleProvider(config.llm);
   const reports = new ReportStudioService(
     new ReportStore(config.reports.file),
     agenticStore,
@@ -200,6 +220,9 @@ export async function createRuntime(): Promise<{
     ...createPlannerTools(planner),
     ...createReportTools(reports),
     ...createEngineerTools(engineer),
+    ...createSkillTools(skills, engineer),
+    ...createChannelAccessTools(channelAccess),
+    ...(aiWorker ? createAiWorkerTools(aiWorker) : []),
     ...createInfraTools(proxmox, vsphere),
     ...createDatabaseTools(database),
     ...createMarketTools(exchanges, market),
@@ -257,10 +280,34 @@ export async function createRuntime(): Promise<{
       ...(!proxmox.isConfigured() ? ["proxmox_"] : []),
       ...(!vsphere.isConfigured() ? ["vsphere_"] : []),
       ...(!config.database.postgresUrl && !config.database.mysqlUrl && !config.database.sqlitePath && !config.database.redisUrl ? ["db_"] : []),
+      ...(!aiWorker ? ["ai_"] : []),
     ],
   });
 
   const channelGateway = new ChannelGateway(async (message) => {
+    const ingress = await channelAccess.evaluate({
+      channel: message.channel,
+      senderId: message.senderId,
+      ...(message.senderName ? { senderName: message.senderName } : {}),
+    });
+    if (ingress.decision === "pairing") {
+      return {
+        text: [
+          "CherryAgent ยังไม่รับคำสั่งจากผู้ส่งรายนี้จนกว่าผู้ดูแลจะอนุมัติ",
+          `Pairing code: ${ingress.code ?? "pending"}`,
+          `Request ID: ${ingress.requestId ?? "unknown"}`,
+          ...(ingress.expiresAt ? [`หมดอายุ: ${ingress.expiresAt}`] : []),
+        ].join("\n"),
+        metadata: { ingress: "pairing", requestId: ingress.requestId },
+      };
+    }
+    if (ingress.decision === "block") {
+      return {
+        text: "CherryAgent ปฏิเสธข้อความนี้ตามนโยบายการเข้าถึงช่องทาง",
+        metadata: { ingress: "blocked", reason: ingress.reason },
+      };
+    }
+
     const attachmentContext = message.attachments?.length
       ? `\n\nAttachments: ${message.attachments.map((attachment) => attachment.name ?? attachment.type).join(", ")}`
       : "";
@@ -289,6 +336,20 @@ export async function createRuntime(): Promise<{
     ...(config.channels.line.channelSecret ? { channelSecret: config.channels.line.channelSecret } : {}),
     ...(config.channels.line.channelAccessToken ? { channelAccessToken: config.channels.line.channelAccessToken } : {}),
   }));
+
+  const doctor = new SystemDoctor({
+    serverHost: config.server.host,
+    authEnabled: config.auth.enabled,
+    authFile: config.auth.file,
+    autoApprove: config.agent.autoApprove,
+    workspaceRoot: config.workspaceRoot,
+    channelNames: () => channelGateway.listAdapters().filter((item) => item.configured).map((item) => item.name),
+    channelAccess,
+    llm: provider,
+    skills,
+    ...(aiWorker ? { aiWorkerHealth: async () => aiWorker.health() } : {}),
+  });
+  for (const tool of createDoctorTools(doctor)) tools.register(tool);
 
   return {
     agent,

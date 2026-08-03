@@ -6,6 +6,7 @@
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — ภาพรวม target architecture ของ CherryAgent
 - [`CORRECTNESS_LOOP.md`](CORRECTNESS_LOOP.md) — independent correctness verification loop
+- [`RESILIENCE_SKILLS_AI_WORKER.md`](RESILIENCE_SKILLS_AI_WORKER.md) — bounded LLM failover, procedural `SKILL.md`, channel pairing, `system_doctor` และ Python AI worker
 
 ## Desktop & Devices
 
