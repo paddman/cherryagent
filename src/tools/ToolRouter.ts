@@ -12,14 +12,24 @@ const intentPacks: Array<{ pattern: RegExp; prefixes: string[] }> = [
 ];
 
 const defaultPrefixes = ["report_", "office_", "planner_", "memory_", "skill_", "files_", "system_", "orchestrator_", "agent_"];
+const MAX_ROUTED_TOOLS = 72;
+
+function unavailable(name: string, prefixes: readonly string[]): boolean {
+  return prefixes.some((prefix) => name.startsWith(prefix));
+}
 
 export function routeToolNames(message: string, tools: AgentTool[], unavailablePrefixes: readonly string[] = []): Set<string> {
   const selectedPacks = intentPacks.filter((pack) => pack.pattern.test(message));
   const prefixes = [...new Set((selectedPacks.length ? selectedPacks.flatMap((pack) => pack.prefixes) : defaultPrefixes))];
-  const names = tools
-    .filter((tool) => prefixes.some((prefix) => tool.name.startsWith(prefix)))
-    .filter((tool) => !unavailablePrefixes.some((prefix) => tool.name.startsWith(prefix)))
-    .slice(0, 72)
-    .map((tool) => tool.name);
-  return new Set(names);
+  const selected = new Set<string>();
+
+  for (const prefix of prefixes) {
+    for (const tool of tools) {
+      if (selected.size >= MAX_ROUTED_TOOLS) return selected;
+      if (!tool.name.startsWith(prefix) || selected.has(tool.name) || unavailable(tool.name, unavailablePrefixes)) continue;
+      selected.add(tool.name);
+    }
+  }
+
+  return selected;
 }
