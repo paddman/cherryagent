@@ -47,11 +47,15 @@ export function createAiWorkerTools(client: AiWorkerClient): AgentTool[] {
         required: ["text"],
         additionalProperties: false,
       },
-      execute: async (args) => client.chunk({
-        text: requiredString(args, "text"),
-        ...(integer(args, "maxChars") !== undefined ? { maxChars: integer(args, "maxChars") } : {}),
-        ...(integer(args, "overlapChars") !== undefined ? { overlapChars: integer(args, "overlapChars") } : {}),
-      }),
+      execute: async (args) => {
+        const maxChars = integer(args, "maxChars");
+        const overlapChars = integer(args, "overlapChars");
+        return client.chunk({
+          text: requiredString(args, "text"),
+          ...(maxChars !== undefined ? { maxChars } : {}),
+          ...(overlapChars !== undefined ? { overlapChars } : {}),
+        });
+      },
     },
     {
       name: "ai_rerank",
@@ -67,11 +71,14 @@ export function createAiWorkerTools(client: AiWorkerClient): AgentTool[] {
         required: ["query", "documents"],
         additionalProperties: false,
       },
-      execute: async (args) => client.rerank({
-        query: requiredString(args, "query"),
-        documents: documents(args),
-        ...(integer(args, "topK") !== undefined ? { topK: integer(args, "topK") } : {}),
-      }),
+      execute: async (args) => {
+        const topK = integer(args, "topK");
+        return client.rerank({
+          query: requiredString(args, "query"),
+          documents: documents(args),
+          ...(topK !== undefined ? { topK } : {}),
+        });
+      },
     },
   ];
 }
