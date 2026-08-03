@@ -5,28 +5,39 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   typescript:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      - name: Regenerate dependency lock from declared overrides
+        run: npm install --package-lock-only --ignore-scripts
       - run: npm ci
-      - name: Inspect and generate patched production dependency lock
-        run: |
-          npm ls brace-expansion || true
-          npm view brace-expansion@1.1.17 version dist.integrity dist.tarball --json || true
-          npm view brace-expansion@2.1.3 version dist.integrity dist.tarball --json || true
-          npm audit fix --force --package-lock-only || true
-          git diff -- package-lock.json
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: Commit regenerated lockfile
+        shell: bash
+        run: |
+          if git diff --quiet -- package-lock.json; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "fix(deps): refresh patched dependency lock"
+          git push origin "HEAD:${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
 
   python-ai-worker:
     runs-on: ubuntu-latest
