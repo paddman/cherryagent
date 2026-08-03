@@ -48,11 +48,15 @@ export function createChannelAccessTools(access: ChannelAccessStore): AgentTool[
         required: ["channel"],
         additionalProperties: false,
       },
-      execute: async (args) => access.approve({
-        channel: requiredString(args, "channel"),
-        ...(optionalString(args, "code") ? { code: optionalString(args, "code") } : {}),
-        ...(optionalString(args, "requestId") ? { requestId: optionalString(args, "requestId") } : {}),
-      }),
+      execute: async (args) => {
+        const code = optionalString(args, "code");
+        const requestId = optionalString(args, "requestId");
+        return access.approve({
+          channel: requiredString(args, "channel"),
+          ...(code !== undefined ? { code } : {}),
+          ...(requestId !== undefined ? { requestId } : {}),
+        });
+      },
     },
     {
       name: "channel_access_revoke",
