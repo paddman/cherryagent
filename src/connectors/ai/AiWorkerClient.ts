@@ -1,6 +1,6 @@
 export type AiWorkerClientOptions = {
   baseUrl: string;
-  token: string;
+  token?: string;
   timeoutMs: number;
 };
 
@@ -33,7 +33,7 @@ export class AiWorkerClient {
 
   constructor(options: AiWorkerClientOptions) {
     this.#baseUrl = options.baseUrl.replace(/\/$/, "");
-    this.#token = options.token.trim();
+    this.#token = (options.token ?? process.env.CHERRY_AI_WORKER_TOKEN ?? "").trim();
     this.#timeoutMs = Math.max(1_000, options.timeoutMs);
     if (!this.#token || this.#token.length < 24 || /[\u0000-\u001f\u007f]/.test(this.#token)) {
       throw new Error("CHERRY_AI_WORKER_TOKEN must contain at least 24 printable characters when the AI worker is enabled");
