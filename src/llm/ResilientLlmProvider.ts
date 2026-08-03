@@ -369,7 +369,7 @@ export class ResilientLlmProvider implements LlmProvider {
     }
 
     const cooldownIndex = Math.min(state.errorCount - 1, TRANSIENT_COOLDOWNS_MS.length - 1);
-    const baseCooldown = TRANSIENT_COOLDOWNS_MS[cooldownIndex] ?? TRANSIENT_COOLDOWNS_MS[TRANSIENT_COOLDOWNS_MS.length - 1];
+    const baseCooldown = TRANSIENT_COOLDOWNS_MS[cooldownIndex] ?? 300_000;
     const delay = Math.max(baseCooldown, failure.retryAfterMs ?? 0);
     state.cooldownUntil = Math.max(state.cooldownUntil, now + delay);
   }
