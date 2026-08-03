@@ -45,6 +45,9 @@ test("allowlist policy blocks unknown senders without issuing a code", async (co
   const blocked = await store.evaluate({ channel: "line", senderId: "stranger" });
   assert.equal(blocked.decision, "block");
   assert.equal(blocked.code, undefined);
+
+  await assert.rejects(() => store.revoke("line", "admin"), /CHERRY_CHANNEL_ALLOW_FROM/);
+  assert.equal((await store.evaluate({ channel: "line", senderId: "admin" })).decision, "allow");
 });
 
 test("approval racing with evaluation cannot recreate a pairing request", async (context) => {
