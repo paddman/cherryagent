@@ -94,6 +94,7 @@ export class OpenAICompatibleProvider implements LlmProvider {
     request.signal?.addEventListener("abort", forwardAbort, { once: true });
 
     let response: Response;
+    let text: string;
     try {
       response = await fetch(`${this.options.baseUrl}/chat/completions`, {
         method: "POST",
@@ -109,6 +110,7 @@ export class OpenAICompatibleProvider implements LlmProvider {
         }),
         signal: controller.signal,
       });
+      text = await response.text();
     } catch (error) {
       if (request.signal?.aborted && !timedOut) {
         throw new OpenAICompatibleProviderError("LLM request aborted", {
@@ -131,7 +133,6 @@ export class OpenAICompatibleProvider implements LlmProvider {
       request.signal?.removeEventListener("abort", forwardAbort);
     }
 
-    const text = await response.text();
     const retryDelay = retryAfterMs(response);
     let payload: ApiResponse;
     try {
