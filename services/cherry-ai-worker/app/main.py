@@ -3,18 +3,44 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Sequence
-from typing import Any
+from hmac import compare_digest
+from typing import Annotated, Any
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 VERSION = "0.1.0"
 MAX_TEXT_CHARS = 2_000_000
 MAX_DOCUMENTS = 200
 MAX_DOCUMENT_CHARS = 100_000
+MIN_WORKER_TOKEN_CHARS = 24
 
-app = FastAPI(title="Cherry AI Worker", version=VERSION)
+
+def configured_worker_token() -> str:
+    token = os.getenv("CHERRY_AI_WORKER_TOKEN", "").strip()
+    if len(token) < MIN_WORKER_TOKEN_CHARS or any(ord(character) < 32 or ord(character) == 127 for character in token):
+        raise HTTPException(
+            status_code=503,
+            detail=f"CHERRY_AI_WORKER_TOKEN must contain at least {MIN_WORKER_TOKEN_CHARS} printable characters",
+        )
+    return token
+
+
+async def require_worker_token(
+    authorization: Annotated[str | None, Header()] = None,
+) -> None:
+    expected = configured_worker_token()
+    scheme, separator, credential = (authorization or "").partition(" ")
+    if not separator or scheme.casefold() != "bearer" or not compare_digest(credential.strip(), expected):
+        raise HTTPException(status_code=401, detail="Invalid AI worker bearer token")
+
+
+app = FastAPI(
+    title="Cherry AI Worker",
+    version=VERSION,
+    dependencies=[Depends(require_worker_token)],
+)
 
 
 class ChunkRequest(BaseModel):
@@ -179,6 +205,7 @@ async def health() -> dict[str, Any]:
         "ok": True,
         "service": "cherry-ai-worker",
         "version": VERSION,
+        "authentication": "bearer",
         "embeddingConfigured": bool(embedding_base_url),
         "capabilities": ["chunk", "rerank", "embedding-proxy"],
     }
@@ -207,7 +234,10 @@ async def embeddings(request: EmbeddingRequest) -> dict[str, Any]:
     model = request.model or os.getenv("CHERRY_AI_EMBEDDING_MODEL", "").strip()
     if not model:
         raise HTTPException(status_code=503, detail="CHERRY_AI_EMBEDDING_MODEL is not configured")
-    timeout_seconds = max(1.0, float(os.getenv("CHERRY_AI_EMBEDDING_TIMEOUT_SECONDS", "60")))
+    try:
+        timeout_seconds = max(1.0, float(os.getenv("CHERRY_AI_EMBEDDING_TIMEOUT_SECONDS", "60")))
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail="CHERRY_AI_EMBEDDING_TIMEOUT_SECONDS must be numeric") from exc
 
     try:
         async with httpx.AsyncClient(timeout=timeout_seconds) as client:
