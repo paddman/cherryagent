@@ -4,14 +4,15 @@ import os
 import re
 from collections.abc import Sequence
 from hmac import compare_digest
-from typing import Annotated, Any
+from typing import Annotated, Any, Self
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 VERSION = "0.1.0"
 MAX_TEXT_CHARS = 2_000_000
+MAX_BATCH_CHARS = 2_000_000
 MAX_DOCUMENTS = 200
 MAX_DOCUMENT_CHARS = 100_000
 MIN_WORKER_TOKEN_CHARS = 24
@@ -83,6 +84,13 @@ class RerankRequest(BaseModel):
             raise ValueError(f"each document must contain at most {MAX_DOCUMENT_CHARS} characters")
         return value
 
+    @model_validator(mode="after")
+    def validate_total_characters(self) -> Self:
+        total = len(self.query) + sum(len(document) for document in self.documents)
+        if total > MAX_BATCH_CHARS:
+            raise ValueError(f"rerank payload exceeds {MAX_BATCH_CHARS} characters")
+        return self
+
 
 class RerankItem(BaseModel):
     index: int
@@ -107,6 +115,8 @@ class EmbeddingRequest(BaseModel):
             raise ValueError("input must contain between 1 and 256 texts")
         if any(not item.strip() or len(item) > MAX_DOCUMENT_CHARS for item in values):
             raise ValueError("embedding texts must be non-empty and within the size limit")
+        if sum(len(item) for item in values) > MAX_BATCH_CHARS:
+            raise ValueError(f"embedding payload exceeds {MAX_BATCH_CHARS} characters")
         return value
 
 
